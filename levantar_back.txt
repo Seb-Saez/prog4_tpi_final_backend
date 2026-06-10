@@ -2,17 +2,17 @@ Comandos para levantar entorno:
 
 (si se me vuelve a romper el entorno virtual borrarlo y no perder tiempo)
 deactivate
-rm -rf venv
-python3 -m venv venv
+rm -rf .venv
+python3 -m venv .venv
 source .venv/bin/activate
 
 (esto es para pruebas si estamos con el pip y el interprete python del entorno virtual venv)
 which python
 which pip
 
-python -m pip install -r requirements.txt
+python3 -m pip install -r requirements.txt
 
-python -m uvicorn main:app --reload
+python3 -m uvicorn main:app --reload
 
 Crear un SECRET_KEY
 python -c "import secrets; print(secrets.token_urlsafe(48))"
