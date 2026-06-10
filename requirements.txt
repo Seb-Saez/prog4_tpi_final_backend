@@ -1,0 +1,10 @@
+fastapi[standard]
+sqlmodel
+pydantic[email]
+passlib[bcrypt]
+PyJWT[crypto]
+pydantic-settings
+uvicorn[standard]
+psycopg2-binary
+python-dotenv
+fastapi-throttle
