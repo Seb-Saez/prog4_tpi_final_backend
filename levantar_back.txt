@@ -4,7 +4,7 @@ Comandos para levantar entorno:
 deactivate
 rm -rf venv
 python3 -m venv venv
-source .venv/bin/activate
+source venv/bin/activate
 
 (esto es para pruebas si estamos con el pip y el interprete python del entorno virtual venv)
 which python
