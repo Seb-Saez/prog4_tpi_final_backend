@@ -9,6 +9,7 @@ from app.core.security import decode_access_token
 from app.core.websocket import manager
 from app.modules.pedido.model import Pedido
 from app.modules.usuarios.model import Usuario
+import asyncio
 
 logger = logging.getLogger("app.modules.ws")
 
@@ -63,9 +64,17 @@ async def ws_pedidos(
 
     try:
         while True:
-            data = await websocket.receive_json()
+            try:
+                data = await asyncio.wait_for(websocket.receive_json(), timeout=30.0)
+            except asyncio.TimeoutError:
+                await websocket.send_json({"event": "PING"})
+                continue
+
             action = data.get("action")
 
+            # NOTE: heartbeat implementado — cada 30s sin mensajes del cliente
+            # se envía un PING para mantener la conexión viva y evitar que
+            # navegadores/proxies cierren el socket por inactividad.
             if action == "subscribe-order":
                 order_id = data.get("order_id")
                 if not isinstance(order_id, int):
@@ -142,7 +151,14 @@ async def ws_cocina(
 
     try:
         while True:
-            await websocket.receive_text()
+            # NOTE: heartbeat implementado — cada 30s sin mensajes del cliente
+            # se envía un PING para mantener la conexión viva y evitar que
+            # navegadores/proxies cierren el socket por inactividad.
+            try:
+                await asyncio.wait_for(websocket.receive_text(), timeout=30.0)
+            except asyncio.TimeoutError:
+                await websocket.send_json({"event": "PING"})
+                continue
     except WebSocketDisconnect:
         pass
     except Exception as e:
