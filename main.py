@@ -21,6 +21,7 @@ from app.modules.direccion.router import router_direccion
 from app.modules.unidad_medida.router import router_unidad_medida
 from app.modules.pedido.router import router_pedido
 from app.modules.ws.router import router_ws
+from app.modules.cloudinary.router import router_cloudinary
 
 
 # ─── Ciclo de vida ────────────────────────────────────────────────────────────
@@ -61,3 +62,4 @@ app.include_router(router_direccion)
 app.include_router(router_unidad_medida)
 app.include_router(router_pedido)
 app.include_router(router_ws)
+app.include_router(router_cloudinary)

@@ -53,6 +53,11 @@ class Settings(BaseSettings):
     ADMIN_INITIAL_FULLNAME: str = "Administrador"
     ADMIN_INITIAL_PASSWORD: str = Field(..., min_length=8, description="Password del admin seedeado al primer arranque")
 
+    # ─── Cloudinary ───────────────────────────────────────────────
+    CLOUDINARY_CLOUD_NAME: str = ""
+    CLOUDINARY_API_KEY: str = ""
+    CLOUDINARY_API_SECRET: str = ""
+
     model_config = {
         "env_file":          ".env",
         "env_file_encoding": "utf-8",
