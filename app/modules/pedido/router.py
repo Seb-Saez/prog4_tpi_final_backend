@@ -29,9 +29,20 @@ def crear_pedido(
     data: PedidoCreate,
     usuario: Annotated[UserPublic, Depends(get_current_active_user)],
     session: Session = Depends(get_session),
+    background_tasks: BackgroundTasks = BackgroundTasks(),
 ):
     """Crea un pedido a partir del carrito del cliente logueado."""
-    return PedidoService(session).crear_desde_carrito(data, usuario)
+    pedido = PedidoService(session).crear_desde_carrito(data, usuario)
+
+    background_tasks.add_task(
+        broadcast_estado_cambiado,
+        pedido_id=pedido.id,
+        estado_anterior=None,
+        estado_nuevo=pedido.estado_pedido_codigo,
+        usuario_id=usuario.id,
+    )
+
+    return pedido
 
 
 @router_pedido.get(
