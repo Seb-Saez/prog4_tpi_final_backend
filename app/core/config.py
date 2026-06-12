@@ -53,6 +53,11 @@ class Settings(BaseSettings):
     ADMIN_INITIAL_FULLNAME: str = "Administrador"
     ADMIN_INITIAL_PASSWORD: str = Field(..., min_length=8, description="Password del admin seedeado al primer arranque")
 
+    # ─── MercadoPago ──────────────────────────────────────────────
+    MP_ACCESS_TOKEN: str = ""
+    MP_NOTIFICATION_URL: str = ""  # URL pública para webhooks (ej: ngrok)
+    MP_FRONTEND_URL: str = "http://localhost:5173"  # URL del frontend para back_urls
+
     # ─── Cloudinary ───────────────────────────────────────────────
     CLOUDINARY_CLOUD_NAME: str = ""
     CLOUDINARY_API_KEY: str = ""

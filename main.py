@@ -1,7 +1,8 @@
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Query
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import RedirectResponse
 from sqlmodel import SQLModel, Session
 
 from app.core.database import engine
@@ -22,6 +23,7 @@ from app.modules.unidad_medida.router import router_unidad_medida
 from app.modules.pedido.router import router_pedido
 from app.modules.ws.router import router_ws
 from app.modules.cloudinary.router import router_cloudinary
+from app.modules.pago.router import router_pago
 
 
 # ─── Ciclo de vida ────────────────────────────────────────────────────────────
@@ -44,11 +46,19 @@ app = FastAPI(lifespan=lifespan)
 # ─── CORS ─────────────────────────────────────────────────────────────────────
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://localhost:5174"],
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+# ─── Redirect de MercadoPago (auto_return HTTPS → localhost) ────────────────
+@app.get("/pago/resultado")
+def redirect_mp(status: str = Query(...), pedido_id: str = Query(...)):
+    return RedirectResponse(
+        f"http://localhost:5175/pago/resultado?status={status}&pedido_id={pedido_id}"
+    )
 
 
 # ─── Routers ──────────────────────────────────────────────────────────────────
@@ -63,3 +73,4 @@ app.include_router(router_unidad_medida)
 app.include_router(router_pedido)
 app.include_router(router_ws)
 app.include_router(router_cloudinary)
+app.include_router(router_pago)

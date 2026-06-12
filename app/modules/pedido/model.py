@@ -31,6 +31,10 @@ class Pedido(BaseEntity, table=True):
     forma_pago_snap: Optional[str] = None
     direccion_snap: Optional[str] = None
 
+    mp_preference_id: Optional[str] = None
+    mp_payment_id: Optional[str] = None
+    mp_payment_status: Optional[str] = None
+
     usuario: "Usuario" = Relationship(back_populates="pedidos")
     estado_pedido: "EstadoPedido" = Relationship(back_populates="pedidos")
     direccion: Optional["DireccionEntrega"] = Relationship(back_populates="pedidos")
