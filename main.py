@@ -24,7 +24,7 @@ from app.modules.pedido.router import router_pedido
 from app.modules.ws.router import router_ws
 from app.modules.cloudinary.router import router_cloudinary
 from app.modules.pago.router import router_pago
-
+from app.core.config import Settings
 
 # ─── Ciclo de vida ────────────────────────────────────────────────────────────
 @asynccontextmanager
@@ -44,9 +44,16 @@ app = FastAPI(lifespan=lifespan)
 
 
 # ─── CORS ─────────────────────────────────────────────────────────────────────
+# Con allow_credentials=True NO se puede usar "*": el navegador exige el origin
+# exacto. Los subdominios de ngrok rotan en cada reinicio, así que se matchean
+# por regex en vez de hardcodearlos.
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=[
+        "http://localhost:5173",
+        "http://localhost:3000",
+    ],
+    allow_origin_regex=r"https://.*\.ngrok(-free)?\.app",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -57,7 +64,7 @@ app.add_middleware(
 @app.get("/pago/resultado")
 def redirect_mp(status: str = Query(...), pedido_id: str = Query(...)):
     return RedirectResponse(
-        f"http://localhost:5175/pago/resultado?status={status}&pedido_id={pedido_id}"
+        f"{Settings.MP_FRONTEND_URL}/pago/resultado?status={status}&pedido_id={pedido_id}"
     )
 
 

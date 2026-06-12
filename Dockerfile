@@ -19,4 +19,8 @@ COPY . .
 EXPOSE 8000
 
 # --reload watches the mounted source and restarts on change.
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+# --proxy-headers + --forwarded-allow-ips: behind ngrok (TLS terminates at the
+# tunnel, traffic reaches uvicorn over HTTP), uvicorn must trust X-Forwarded-Proto
+# so redirects and absolute URLs are built as https:// instead of http://.
+# Without this, the trailing-slash 307 redirect points to http:// → mixed content.
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--reload", "--proxy-headers", "--forwarded-allow-ips", "*"]

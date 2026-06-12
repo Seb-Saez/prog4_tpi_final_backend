@@ -22,7 +22,7 @@ def create(categoria: CategoriaCreate, session: Session = Depends(get_session)):
 
 
 @router_categoria.get(
-    "/",
+    "/", 
     response_model=list[CategoriaResponse],
     dependencies=[Depends(get_current_active_user)],
 )

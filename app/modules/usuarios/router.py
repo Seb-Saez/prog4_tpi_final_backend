@@ -67,7 +67,7 @@ def login(
             value=token.access_token,
             httponly=True,
             max_age=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
-            samesite="lax",
+            samesite=settings.COOKIE_SAMESITE,
             secure=settings.COOKIE_SECURE,
         )
         return {"mensaje": "Login exitoso. Sesión iniciada."}
@@ -85,7 +85,7 @@ def logout(
     response.delete_cookie(
         key="access_token",
         httponly=True,
-        samesite="lax",
+        samesite=settings.COOKIE_SAMESITE,
         secure=settings.COOKIE_SECURE,
     )
     return {"mensaje": "Sesión cerrada exitosamente"}
