@@ -6,7 +6,15 @@ from fastapi.responses import RedirectResponse
 from sqlmodel import SQLModel, Session
 
 from app.core.database import engine
-from app.core.seed import seed_admin_user, seed_estados_pedido, seed_formas_pago, seed_roles, seed_unidades_medida
+from app.core.seed import (
+    seed_admin_user,
+    seed_categorias,
+    seed_estados_pedido,
+    seed_formas_pago,
+    seed_productos,
+    seed_roles,
+    seed_unidades_medida,
+)
 
 # Registrar modelos sin router propio en SQLModel.metadata antes de create_all
 from app.modules.refresh_token import model as _refresh_token_model  # noqa: F401
@@ -39,6 +47,8 @@ async def lifespan(app: FastAPI):
         seed_estados_pedido(session)
         seed_formas_pago(session)
         seed_unidades_medida(session)
+        seed_categorias(session)
+        seed_productos(session)
     yield
     # Shutdown: nada por ahora
 
