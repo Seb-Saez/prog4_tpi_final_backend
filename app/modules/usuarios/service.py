@@ -1,15 +1,17 @@
 from typing import Sequence
+from datetime import datetime, timedelta, timezone
 
 from fastapi import HTTPException, status
 
 from app.core.config import settings
-from app.core.security import hash_password, verify_password, create_access_token
+from app.core.security import hash_password, verify_password, create_access_token, create_refresh_token_pair, hash_token
 from app.modules.usuarios.model import Usuario
 from app.modules.usuarios.schema import UserCreate, Token, UserPublic
 from app.modules.usuarios.unit_of_work import UsuarioUnitOfWork
 from app.modules.rol.model import UsuarioRol
 from app.modules.rol.enums import RolEnum
 from app.modules.rol.unit_of_work import RolUnitOfWork
+from app.modules.refresh_token.model import RefreshToken
 
 
 class UsuarioService:
@@ -42,14 +44,14 @@ class UsuarioService:
 
         nuevo = self.uow.usuarios.add(usuario)
 
-        rol_cliente = self.rol_uow.roles.get_by_codigo(RolEnum.CLIENTE)
+        rol_cliente = self.rol_uow.roles.get_by_codigo(RolEnum.CLIENT)
         if rol_cliente:
             self.rol_uow.usuarios_roles.add(UsuarioRol(usuario_id=nuevo.id, rol_id=rol_cliente.id))
             self.uow.usuarios.session.refresh(nuevo)
 
         return UserPublic.model_validate(nuevo)
 
-    def authenticate(self, username: str, password: str) -> Token:
+    def authenticate(self, username: str, password: str) -> tuple[Token, str]:
         user = self.uow.usuarios.get_by_username(username)
         if not user:
             user = self.uow.usuarios.get_by_email(username)
@@ -73,11 +75,22 @@ class UsuarioService:
             data={"sub": user.username, "roles": roles},
             token_version=user.token_version,
         )
-        return Token(
+        token = Token(
             access_token=access_token,
             token_type="bearer",
             expires_in=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
         )
+
+        # Genera y persiste el refresh token; expires_at en UTC naive para consistencia con el modelo
+        refresh_plain, refresh_hash = create_refresh_token_pair()
+        expires_at = datetime.utcnow() + timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS)
+        self.uow.refresh_tokens.add(RefreshToken(
+            usuario_id=user.id,
+            token_hash=refresh_hash,
+            expires_at=expires_at,
+        ))
+
+        return token, refresh_plain
 
     def list_all(self) -> Sequence[Usuario]:
         return self.uow.usuarios.get_all()
@@ -101,3 +114,7 @@ class UsuarioService:
             )
         user.token_version += 1
         self.uow.usuarios.update(user)
+
+    def revoke_refresh_tokens(self, user_id: int) -> None:
+        """Revoca todos los refresh tokens activos del usuario."""
+        self.uow.refresh_tokens.revoke_all_for_usuario(user_id)

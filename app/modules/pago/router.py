@@ -28,13 +28,26 @@ def crear_preferencia(
 
 
 @router_pago.post("/webhook")
-def webhook_mercadopago(
+async def webhook_mercadopago(
     request: Request,
     session: Session = Depends(get_session),
 ):
-    """Webhook IPN de MercadoPago — sin autenticación."""
+    """Webhook IPN de MercadoPago — sin autenticación.
+
+    MercadoPago envía la notificación como query params (?topic=payment&id=...)
+    o como JSON body ({"type": "payment", "data": {"id": "..."}}). Se contemplan
+    ambos formatos: primero query params, y si vienen vacíos se lee el body.
+    """
     data = dict(request.query_params)
     if not data:
+<<<<<<< Updated upstream
         data = request.state.body if hasattr(request.state, "body") else {}
     PagoService(session).procesar_webhook(data)
+=======
+        try:
+            data = await request.json()
+        except Exception:
+            data = {}
+    await PagoService(session).procesar_webhook(data)
+>>>>>>> Stashed changes
     return {"status": "ok"}

@@ -1,5 +1,7 @@
 from typing import Optional, List, TYPE_CHECKING
 from sqlmodel import Field, Relationship
+from sqlalchemy import Column, String
+from sqlalchemy.dialects.postgresql import ARRAY
 
 from ..producto_categoria.model import ProductoCategoria
 from app.core.base_model import BaseEntity
@@ -15,7 +17,7 @@ class Producto(BaseEntity, table=True):
     nombre: str
     descripcion: str
     precio_base: Decimal = Field(max_digits=10, decimal_places=2, ge=0)
-    imagenes_url: Optional[str] = None
+    imagenes_url: list[str] = Field(default_factory=list, sa_column=Column(ARRAY(String)))
     stock_cantidad: int = Field(default=0, ge=0)
     disponible: bool = True
     unidad_venta_id: Optional[int] = Field(foreign_key="unidad_medida.id", default=None)

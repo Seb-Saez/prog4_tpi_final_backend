@@ -19,6 +19,11 @@ class DetallePedidoInput(SQLModel):
     personalizacion: List[int] = []
 
 
+class AvanzarEstadoRequest(SQLModel):
+    nuevo_estado: Optional[str] = None
+    motivo: Optional[str] = None
+
+
 class PedidoCreate(SQLModel):
     """Payload para crear un pedido desde el carrito.
 
@@ -69,6 +74,7 @@ class HistorialEstadoOut(SQLModel):
     estado_nuevo: str
     usuario_id: int
     fecha_cambio: datetime
+    motivo: Optional[str] = None
 
 
 class PedidoResumen(SQLModel):
@@ -78,6 +84,7 @@ class PedidoResumen(SQLModel):
     modalidad_entrega: ModalidadEntrega
     estado_pedido: EstadoPedidoOut
     subtotal: Decimal
+    descuento: Decimal
     costo_envio: Decimal
     total: Decimal
     created_at: datetime
@@ -92,6 +99,7 @@ class PedidoResponse(SQLModel):
     forma_pago_id: int
     estado_pedido: EstadoPedidoOut
     subtotal: Decimal
+    descuento: Decimal
     costo_envio: Decimal
     total: Decimal
     notas: Optional[str]

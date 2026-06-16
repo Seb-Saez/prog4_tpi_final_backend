@@ -1,4 +1,4 @@
-from typing import TYPE_CHECKING, List
+from typing import TYPE_CHECKING, List, Optional
 from sqlmodel import Field, Relationship
 
 from app.core.base_model import BaseEntity
@@ -19,6 +19,7 @@ class Usuario(BaseEntity, table=True):
     hashed_password: str
     disabled: bool = Field(default=False)
     token_version: int = Field(default=0)
+    celular: Optional[str] = None
 
     direcciones: List["DireccionEntrega"] = Relationship(back_populates="usuario")
 

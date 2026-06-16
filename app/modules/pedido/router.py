@@ -1,6 +1,6 @@
 from typing import Annotated, Optional
 
-from fastapi import APIRouter, BackgroundTasks, Depends, Path, Query, status
+from fastapi import APIRouter, BackgroundTasks, Body, Depends, Path, Query, status
 from sqlmodel import Session
 
 from app.core.database import get_session
@@ -9,7 +9,7 @@ from app.core.websocket import broadcast_estado_cambiado
 from app.modules.rol.enums import RolEnum
 from app.modules.usuarios.schema import UserPublic
 
-from .schema import PedidoCreate, PedidoResponse, PedidoResumen
+from .schema import AvanzarEstadoRequest, PedidoCreate, PedidoResponse, PedidoResumen
 from .service import PedidoService
 
 
@@ -111,7 +111,7 @@ def cancelar_pedido(
 @router_pedido.get(
     "/",
     response_model=list[PedidoResumen],
-    dependencies=[Depends(require_role([RolEnum.ADMIN, RolEnum.COCINA]))],
+    dependencies=[Depends(require_role([RolEnum.ADMIN, RolEnum.PEDIDOS]))],
 )
 def listar_todos(
     session: Session = Depends(get_session),
@@ -133,17 +133,28 @@ def avanzar_estado(
     pedido_id: Annotated[int, Path(ge=1)],
     usuario: Annotated[
         UserPublic,
-        Depends(require_role([RolEnum.ADMIN, RolEnum.COCINA])),
+        Depends(require_role([RolEnum.ADMIN, RolEnum.PEDIDOS])),
     ],
     session: Session = Depends(get_session),
     background_tasks: BackgroundTasks = BackgroundTasks(),
+    body: AvanzarEstadoRequest = Body(default=AvanzarEstadoRequest()),
 ):
-    """Avanza el pedido al siguiente estado por orden ascendente."""
+    """Avanza el pedido al siguiente estado por orden ascendente.
+
+    El body es opcional. Si se envía `nuevo_estado`, se valida que coincida
+    con el siguiente estado esperado. Si se envía `motivo`, queda registrado
+    en el historial.
+    """
     service = PedidoService(session)
     current = service.get_pedido(pedido_id, usuario)
     estado_anterior: str | None = current.estado_pedido.codigo
 
-    pedido = service.avanzar_estado(pedido_id, usuario)
+    pedido = service.avanzar_estado(
+        pedido_id,
+        usuario,
+        nuevo_estado=body.nuevo_estado,
+        motivo=body.motivo,
+    )
 
     background_tasks.add_task(
         broadcast_estado_cambiado,
@@ -151,6 +162,7 @@ def avanzar_estado(
         estado_anterior=estado_anterior,
         estado_nuevo=pedido.estado_pedido_codigo,
         usuario_id=usuario.id,
+        motivo=body.motivo,
     )
 
     return pedido

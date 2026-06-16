@@ -47,6 +47,14 @@ class DireccionService:
             direccion = self._get_or_404(uow, direccion_id, usuario_id)
             uow.direcciones.delete(direccion)
 
+    def set_principal(self, direccion_id: int, usuario_id: int) -> DireccionEntrega:
+        with DireccionUnitOfWork(self._session) as uow:
+            direccion = self._get_or_404(uow, direccion_id, usuario_id)
+            self._quitar_principal(uow, usuario_id)
+            direccion.es_principal = True
+            uow.direcciones.add(direccion)
+            return direccion
+
     def _quitar_principal(self, uow, usuario_id: int) -> None:
         actual = uow.direcciones.get_principal(usuario_id)
         if actual:
@@ -67,3 +75,6 @@ def update_direccion(session, direccion_id: int, usuario_id: int, data: Direccio
 
 def delete_direccion(session, direccion_id: int, usuario_id: int) -> None:
     return DireccionService(session).delete(direccion_id, usuario_id)
+
+def set_principal_direccion(session, direccion_id: int, usuario_id: int) -> DireccionEntrega:
+    return DireccionService(session).set_principal(direccion_id, usuario_id)

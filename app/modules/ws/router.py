@@ -19,15 +19,15 @@ router_ws = APIRouter()
 def _determinar_rol(roles: list[str]) -> str:
     if "ADMIN" in roles:
         return "admin"
-    if "COCINA" in roles:
-        return "cocina"
-    if "CAJA" in roles:
-        return "caja"
+    if "PEDIDOS" in roles:
+        return "pedidos"
+    if "STOCK" in roles:
+        return "stock"
     return "user"
 
 
 def _es_staff(rol: str) -> bool:
-    return rol in ("admin", "cocina", "caja")
+    return rol in ("admin", "pedidos", "stock")
 
 
 @router_ws.websocket("/ws/pedidos")

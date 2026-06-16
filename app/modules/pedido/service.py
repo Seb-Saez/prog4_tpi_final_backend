@@ -83,7 +83,72 @@ class PedidoService:
             assert pedido_completo is not None
             return pedido_completo
 
-    def avanzar_estado(self, pedido_id: int, usuario: UserPublic) -> Pedido:
+    def avanzar_estado(
+        self,
+        pedido_id: int,
+        usuario: UserPublic,
+        nuevo_estado: str | None = None,
+        motivo: str | None = None,
+    ) -> Pedido:
+        with PedidoUnitOfWork(self._session) as uow:
+            pedido = self._get_or_404(uow, pedido_id)
+            estado_actual = pedido.estado_pedido
+
+            if estado_actual.es_terminal:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="El pedido ya está en un estado terminal",
+                )
+
+            excluidos = ESTADOS_A_SALTAR_POR_MODALIDAD.get(
+                pedido.modalidad_entrega, []
+            )
+            estado_siguiente = uow.estados.get_siguiente(
+                estado_actual.orden, codigos_excluidos=excluidos
+            )
+            if estado_siguiente is None:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="No hay estado siguiente configurado para esta modalidad",
+                )
+
+            # Valida que el estado solicitado coincida con el siguiente esperado
+            if nuevo_estado is not None and nuevo_estado != estado_siguiente.codigo:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=(
+                        f"El estado solicitado '{nuevo_estado}' no coincide con "
+                        f"el siguiente estado esperado '{estado_siguiente.codigo}'"
+                    ),
+                )
+
+            pedido.estado_pedido_codigo = estado_siguiente.codigo
+            uow.pedidos.update(pedido)
+
+            uow.historiales.add(
+                HistorialEstadoPedido(
+                    usuario_id=usuario.id,
+                    pedido_id=pedido.id,
+                    estado_anterior=estado_actual.codigo,
+                    estado_nuevo=estado_siguiente.codigo,
+                    motivo=motivo,
+                )
+            )
+
+            pedido_completo = uow.pedidos.get_full(pedido.id)
+            assert pedido_completo is not None
+            return pedido_completo
+
+    def avanzar_estado_sistema(
+        self,
+        pedido_id: int,
+        motivo: str | None = None,
+    ) -> Pedido:
+        """Avanza el estado usando el usuario_id del propio pedido como actor.
+
+        Diseñado para disparadores del sistema (webhooks, crons) donde no hay
+        un usuario autenticado. Reutiliza la lógica de avanzar_estado.
+        """
         with PedidoUnitOfWork(self._session) as uow:
             pedido = self._get_or_404(uow, pedido_id)
             estado_actual = pedido.estado_pedido
@@ -111,10 +176,11 @@ class PedidoService:
 
             uow.historiales.add(
                 HistorialEstadoPedido(
-                    usuario_id=usuario.id,
+                    usuario_id=pedido.usuario_id,
                     pedido_id=pedido.id,
                     estado_anterior=estado_actual.codigo,
                     estado_nuevo=estado_siguiente.codigo,
+                    motivo=motivo,
                 )
             )
 
@@ -195,7 +261,7 @@ class PedidoService:
     def _asegurar_acceso(self, pedido: Pedido, usuario: UserPublic) -> None:
         if pedido.usuario_id == usuario.id:
             return
-        allowed_roles = {RolEnum.ADMIN, RolEnum.COCINA}
+        allowed_roles = {RolEnum.ADMIN, RolEnum.PEDIDOS}
         if set(usuario.roles) & allowed_roles:
             return
         raise HTTPException(

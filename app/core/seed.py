@@ -14,6 +14,7 @@ from app.modules.forma_pago.model import FormaPago
 from app.modules.rol.enums import RolEnum
 from app.modules.rol.model import Rol, UsuarioRol
 from app.modules.rol.unit_of_work import RolUnitOfWork
+from app.modules.unidad_medida.model import UnidadMedida
 from app.modules.usuarios.model import Usuario
 from app.modules.usuarios.unit_of_work import UsuarioUnitOfWork
 
@@ -25,15 +26,15 @@ ROLES_SEED: list[dict] = [
         "descripcion": "Acceso total sin restricciones",
     },
     {
-        "codigo": "COCINA",
+        "codigo": "PEDIDOS",
         "descripcion": "Avanzar estados de pedidos",
     },
     {
-        "codigo": "CAJA",
+        "codigo": "STOCK",
         "descripcion": "Actualizar stock, gestionar productos, confirmar pedidos",
     },
     {
-        "codigo": "CLIENTE",
+        "codigo": "CLIENT",
         "descripcion": "Operar solo con sus propios datos",
     },
 ]
@@ -182,4 +183,34 @@ def seed_formas_pago(session: Session) -> None:
 
     for forma in nuevas:
         session.add(forma)
+    session.commit()
+
+
+# Unidades de medida habilitadas por defecto.
+UNIDADES_MEDIDA_SEED: list[dict] = [
+    {"nombre": "Kilogramo",  "simbolo": "kg",        "tipo": "peso"},
+    {"nombre": "Gramo",      "simbolo": "g",         "tipo": "peso"},
+    {"nombre": "Litro",      "simbolo": "L",         "tipo": "volumen"},
+    {"nombre": "Mililitro",  "simbolo": "ml",        "tipo": "volumen"},
+    {"nombre": "Unidad",     "simbolo": "ud",        "tipo": "unidad"},
+    {"nombre": "Porción",    "simbolo": "porciones", "tipo": "unidad"},
+]
+
+
+def seed_unidades_medida(session: Session) -> None:
+    """Crea las unidades de medida que falten. Idempotente: matchea por símbolo."""
+    existentes_simbolos = {
+        u.simbolo for u in session.exec(select(UnidadMedida)).all()
+    }
+
+    nuevas = [
+        UnidadMedida(**data)
+        for data in UNIDADES_MEDIDA_SEED
+        if data["simbolo"] not in existentes_simbolos
+    ]
+    if not nuevas:
+        return
+
+    for unidad in nuevas:
+        session.add(unidad)
     session.commit()

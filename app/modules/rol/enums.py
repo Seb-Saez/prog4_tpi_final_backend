@@ -7,6 +7,6 @@ class RolEnum(StrEnum):
     vive en la tabla `rol`."""
 
     ADMIN   = "ADMIN"
-    CLIENTE = "CLIENTE"
-    COCINA  = "COCINA"
-    CAJA    = "CAJA"
+    CLIENT  = "CLIENT"
+    PEDIDOS = "PEDIDOS"
+    STOCK   = "STOCK"

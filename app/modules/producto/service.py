@@ -1,9 +1,17 @@
-from typing import Optional
+from typing import List, Optional
 from fastapi import HTTPException
 from sqlmodel import Session, col, select
 
 from app.modules.producto.model import Producto
-from app.modules.producto.schema import ProductoCreate, ProductoUpdate, ProductoResponse
+from app.modules.producto.schema import (
+    DisponibilidadUpdate,
+    ImagenesUpdate,
+    ProductoCreate,
+    ProductoIngredienteInput,
+    ProductoIngredienteOut,
+    ProductoUpdate,
+    ProductoResponse,
+)
 from app.modules.producto.unit_of_work import ProductoUnitOfWork
 from app.modules.categoria.model import Categoria
 from app.modules.producto_ingrediente.model import ProductoIngrediente
@@ -99,6 +107,10 @@ class ProductoService:
                 )
 
             if "categorias_ids" in data.model_fields_set and data.categorias_ids is not None:
+<<<<<<< Updated upstream
+=======
+                if data.categorias_ids is not None:
+>>>>>>> Stashed changes
                     categorias = list(
                         uow.session.exec(
                             select(Categoria).where(col(Categoria.id).in_(data.categorias_ids))
@@ -121,6 +133,58 @@ class ProductoService:
 
             uow.productos.add(producto)
             return producto
+
+    def set_disponibilidad(self, producto_id: int, disponible: bool) -> Producto:
+        with ProductoUnitOfWork(self._session) as uow:
+            producto = self._get_or_404(uow, producto_id)
+            producto.disponible = disponible
+            producto.updated_at = utcnow()
+            uow.productos.add(producto)
+            return producto
+
+    def set_imagenes(self, producto_id: int, imagenes_url: List[str]) -> Producto:
+        with ProductoUnitOfWork(self._session) as uow:
+            producto = self._get_or_404(uow, producto_id)
+            producto.imagenes_url = imagenes_url
+            producto.updated_at = utcnow()
+            uow.productos.add(producto)
+            return producto
+
+    def get_ingredientes(self, producto_id: int) -> List[ProductoIngrediente]:
+        with ProductoUnitOfWork(self._session) as uow:
+            producto = self._get_or_404(uow, producto_id)
+            return list(producto.producto_ingredientes)
+
+    def add_ingrediente(
+        self, producto_id: int, data: ProductoIngredienteInput
+    ) -> List[ProductoIngrediente]:
+        with ProductoUnitOfWork(self._session) as uow:
+            producto = self._get_or_404(uow, producto_id)
+
+            # Verifica si el vínculo ya existe
+            existe = any(
+                pi.ingrediente_id == data.ingrediente_id
+                for pi in producto.producto_ingredientes
+            )
+            if existe:
+                raise HTTPException(
+                    status_code=409,
+                    detail="El ingrediente ya está asociado al producto",
+                )
+
+            pi = ProductoIngrediente(
+                producto_id=producto_id,
+                ingrediente_id=data.ingrediente_id,
+                cantidad=data.cantidad,
+                unidad_medida_id=data.unidad_medida_id,
+                es_removible=data.es_removible,
+            )
+            uow.session.add(pi)
+            uow.session.flush()
+
+            # Recarga para devolver la lista actualizada
+            producto_actualizado = self._get_or_404(uow, producto_id)
+            return list(producto_actualizado.producto_ingredientes)
 
     def delete(self, producto_id: int) -> bool:
         with ProductoUnitOfWork(self._session) as uow:
@@ -157,3 +221,31 @@ def update_producto(session: Session, producto_id: int, data: ProductoUpdate) ->
 def delete_producto(session: Session, producto_id: int) -> bool:
     service = ProductoService(session)
     return service.delete(producto_id)
+
+
+def set_disponibilidad_producto(
+    session: Session, producto_id: int, disponible: bool
+) -> Producto:
+    service = ProductoService(session)
+    return service.set_disponibilidad(producto_id, disponible)
+
+
+def set_imagenes_producto(
+    session: Session, producto_id: int, imagenes_url: list[str]
+) -> Producto:
+    service = ProductoService(session)
+    return service.set_imagenes(producto_id, imagenes_url)
+
+
+def get_ingredientes_producto(
+    session: Session, producto_id: int
+) -> list[ProductoIngrediente]:
+    service = ProductoService(session)
+    return service.get_ingredientes(producto_id)
+
+
+def add_ingrediente_producto(
+    session: Session, producto_id: int, data: ProductoIngredienteInput
+) -> list[ProductoIngrediente]:
+    service = ProductoService(session)
+    return service.add_ingrediente(producto_id, data)

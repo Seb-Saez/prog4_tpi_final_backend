@@ -503,4 +503,4 @@ async def broadcast_estado_cambiado(
     }
 
     await manager.broadcast_to_order(pedido_id, "estado_cambiado", evento)
-    await manager.broadcast_to_roles(["admin", "cocina", "caja", "user"], "estado_cambiado", evento)
+    await manager.broadcast_to_roles(["admin", "pedidos", "stock", "user"], "estado_cambiado", evento)

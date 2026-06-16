@@ -1,4 +1,4 @@
-from typing import Any
+from typing import Any, Optional
 
 from pydantic import EmailStr, model_validator
 from sqlmodel import SQLModel, Field
@@ -10,6 +10,13 @@ class UserCreate(SQLModel):
     full_name: str
     email:     EmailStr
     password:  str = Field(min_length=8)
+    celular:   Optional[str] = None
+
+
+class UserUpdate(SQLModel):
+    """Campos actualizables del usuario — todos opcionales."""
+    full_name: Optional[str] = None
+    celular:   Optional[str] = None
 
 
 class UserPublic(SQLModel):
@@ -20,6 +27,7 @@ class UserPublic(SQLModel):
     email:     str
     roles:     list[str]
     disabled:  bool
+    celular:   Optional[str] = None
 
     @model_validator(mode="before")
     @classmethod
@@ -33,6 +41,7 @@ class UserPublic(SQLModel):
                 "email": data.email,
                 "roles": [ur.rol.codigo for ur in data.roles if ur.rol],
                 "disabled": data.disabled,
+                "celular": getattr(data, "celular", None),
             }
         return data
 

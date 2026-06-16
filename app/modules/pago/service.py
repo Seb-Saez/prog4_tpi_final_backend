@@ -1,10 +1,13 @@
 import logging
+from decimal import Decimal
 
 import mercadopago
 from fastapi import HTTPException, status
 from sqlmodel import Session
 
 from app.core.config import settings
+from app.core.websocket import broadcast_estado_cambiado
+from app.modules.pago.model import Pago
 from app.modules.pedido.model import Pedido
 from app.modules.pedido.unit_of_work import PedidoUnitOfWork
 from app.modules.usuarios.schema import UserPublic
@@ -57,7 +60,13 @@ class PagoService:
                 "preference_id": response["id"],
             }
 
-    def procesar_webhook(self, data: dict) -> None:
+    async def procesar_webhook(self, data: dict) -> None:
+        try:
+            await self._procesar_webhook_interno(data)
+        except Exception as e:
+            logger.error("Error inesperado en procesar_webhook: %s", e, exc_info=True)
+
+    async def _procesar_webhook_interno(self, data: dict) -> None:
         topic = data.get("topic") or data.get("type")
         if topic not in ("payment", "merchant_order"):
             return
@@ -89,15 +98,84 @@ class PagoService:
         pedido_id = int(external_ref)
         status_mp = payment_data.get("status")
 
+        # Clave de idempotencia: usa el header si viene, sino el payment_id
+        idempotency_key = (
+            data.get("idempotency_key")
+            or data.get("x-idempotency-key")
+            or str(payment_id)
+        )
+
+        estado_anterior: str | None = None
+        should_advance = False
+
         with PedidoUnitOfWork(self._session) as uow:
+            # Control de idempotencia — evitar reprocesar el mismo pago
+            pago_existente = uow.pagos.get_by_idempotency_key(idempotency_key)
+            if pago_existente is not None:
+                logger.info(
+                    "Webhook idempotente: pago %s ya procesado (id=%s)",
+                    idempotency_key,
+                    pago_existente.id,
+                )
+                return
+
             pedido = uow.pedidos.get_full(pedido_id)
             if pedido is None:
                 logger.warning("Webhook: pedido %s no encontrado", pedido_id)
                 return
 
+            # Registrar fila de pago
+            raw_amount = payment_data.get("transaction_amount")
+            pago = Pago(
+                pedido_id=pedido_id,
+                mp_payment_id=str(payment_id),
+                mp_status=status_mp,
+                mp_status_detail=payment_data.get("status_detail"),
+                transaction_amount=(
+                    Decimal(str(raw_amount)) if raw_amount is not None else None
+                ),
+                payment_method_id=payment_data.get("payment_method_id"),
+                idempotency_key=idempotency_key,
+                external_reference=external_ref,
+            )
+            uow.pagos.add(pago)
+
+            # Actualizar campos MP en el pedido
             pedido.mp_payment_id = str(payment_id)
             pedido.mp_payment_status = status_mp
             uow.pedidos.update(pedido)
+
+            # Capturar estado antes de salir del UoW para el broadcast posterior
+            estado_anterior = pedido.estado_pedido_codigo
+            should_advance = (
+                status_mp == "approved"
+                and pedido.estado_pedido.orden == 1
+            )
+        # El UoW ya commitió aquí — pago y campos MP persisten
+
+        # Avanzar el estado del pedido fuera del UoW de pago (evita contextos anidados)
+        if should_advance:
+            # Importación diferida para evitar ciclo circular en module-load
+            from app.modules.pedido.service import PedidoService  # noqa: PLC0415
+
+            try:
+                pedido_avanzado = PedidoService(self._session).avanzar_estado_sistema(
+                    pedido_id,
+                    motivo="Pago aprobado (MercadoPago)",
+                )
+                await broadcast_estado_cambiado(
+                    pedido_id=pedido_id,
+                    estado_anterior=estado_anterior,
+                    estado_nuevo=pedido_avanzado.estado_pedido_codigo,
+                    motivo="Pago aprobado (MercadoPago)",
+                )
+            except Exception as e:
+                logger.error(
+                    "Error al avanzar estado del pedido %s tras pago aprobado: %s",
+                    pedido_id,
+                    e,
+                    exc_info=True,
+                )
 
     @staticmethod
     def _asegurar_propietario(pedido: Pedido, usuario: UserPublic) -> None:
