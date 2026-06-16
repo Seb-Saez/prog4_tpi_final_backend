@@ -81,6 +81,22 @@ class TestProductoCRUD:
         resp = client.get(f"{self.ENDPOINT}/99999")
         assert resp.status_code == 404
 
+    def test_list_productos_public(self, client: TestClient, admin_headers):
+        # El catálogo es navegable sin sesión: invitado puede listar productos.
+        self._seed_producto(client, "Pizza", 200.0)
+        client.cookies.clear()  # anónimo
+        resp = client.get(self.ENDPOINT)
+        assert resp.status_code == 200
+        assert len(resp.json()) >= 1
+
+    def test_get_producto_public(self, client: TestClient, admin_headers):
+        # El detalle de producto también es público.
+        prod = self._seed_producto(client, "Hamburguesa", 100.0)
+        client.cookies.clear()  # anónimo
+        resp = client.get(f"{self.ENDPOINT}/{prod['id']}")
+        assert resp.status_code == 200
+        assert resp.json()["nombre"] == "Hamburguesa"
+
     def test_update_producto(self, client: TestClient, admin_headers):
         prod = self._seed_producto(client, "Hamburguesa Clásica", 100.0)
         resp = client.patch(f"{self.ENDPOINT}/{prod['id']}", json={

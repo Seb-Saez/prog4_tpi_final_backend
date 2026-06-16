@@ -3,7 +3,7 @@ from fastapi import APIRouter, Depends, HTTPException, status, Path, Query
 from sqlmodel import Session
 from app.modules.rol.enums import RolEnum
 from app.core.database import get_session
-from app.core.deps import get_current_active_user, require_role
+from app.core.deps import require_role
 
 from .schema import (
     DisponibilidadUpdate,
@@ -42,7 +42,6 @@ def create(producto: ProductoCreate, session: Session = Depends(get_session)):
 @router_producto.get(
     "/",
     response_model=list[ProductoResponse],
-    dependencies=[Depends(get_current_active_user)],
 )
 def list_all(
     session: Session = Depends(get_session),
@@ -60,7 +59,6 @@ def list_all(
 @router_producto.get(
     "/{producto_id}",
     response_model=ProductoResponse,
-    dependencies=[Depends(get_current_active_user)],
 )
 def get_by_id(
     producto_id: Annotated[int, Path(ge=1, description="ID del producto")],
@@ -132,7 +130,6 @@ def update_imagenes(
 @router_producto.get(
     "/{producto_id}/ingredientes",
     response_model=list[ProductoIngredienteOut],
-    dependencies=[Depends(get_current_active_user)],
 )
 def list_ingredientes(
     producto_id: Annotated[int, Path(ge=1, description="ID del producto")],

@@ -62,6 +62,21 @@ class TestIngredienteCRUD:
         resp = client.get(f"{self.ENDPOINT}/99999")
         assert resp.status_code == 404
 
+    def test_list_ingredientes_public(self, client: TestClient, admin_headers):
+        # Los ingredientes (info de alérgenos) son públicos para el catálogo.
+        self._seed_ingrediente(client, "Lechuga", False)
+        client.cookies.clear()  # anónimo
+        resp = client.get(self.ENDPOINT)
+        assert resp.status_code == 200
+        assert len(resp.json()) >= 1
+
+    def test_get_ingrediente_public(self, client: TestClient, admin_headers):
+        ing = self._seed_ingrediente(client, "Tomate", False)
+        client.cookies.clear()  # anónimo
+        resp = client.get(f"{self.ENDPOINT}/{ing['id']}")
+        assert resp.status_code == 200
+        assert resp.json()["nombre"] == "Tomate"
+
     def test_update_ingrediente(self, client: TestClient, admin_headers):
         ing = self._seed_ingrediente(client, "Cebolla", False)
         resp = client.patch(f"{self.ENDPOINT}/{ing['id']}", json={

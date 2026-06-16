@@ -60,6 +60,22 @@ class TestCategoriaCRUD:
         resp = client.get(f"{self.ENDPOINT}/99999")
         assert resp.status_code == 404
 
+    def test_list_categorias_public(self, client: TestClient, admin_headers):
+        # El catálogo es navegable sin sesión: invitado puede listar categorías.
+        self._seed_categoria(client, "Bebidas", "Bebidas")
+        client.cookies.clear()  # anónimo
+        resp = client.get(self.ENDPOINT)
+        assert resp.status_code == 200
+        assert len(resp.json()) >= 1
+
+    def test_get_categoria_public(self, client: TestClient, admin_headers):
+        # El detalle de categoría también es público.
+        cat = self._seed_categoria(client, "Postres", "Dulces")
+        client.cookies.clear()  # anónimo
+        resp = client.get(f"{self.ENDPOINT}/{cat['id']}")
+        assert resp.status_code == 200
+        assert resp.json()["nombre"] == "Postres"
+
     def test_update_categoria(self, client: TestClient, admin_headers, client_token):
         cat = self._seed_categoria(client, "Snacks", "Salados")
         resp = client.patch(f"{self.ENDPOINT}/{cat['id']}", json={
