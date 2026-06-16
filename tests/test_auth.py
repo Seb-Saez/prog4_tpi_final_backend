@@ -26,7 +26,7 @@ class TestRegister:
         assert data["email"] == "new@mail.com"
         assert data["full_name"] == "New User"
         assert "password" not in data
-        assert "CLIENTE" in data["roles"]
+        assert "CLIENT" in data["roles"]
 
     def test_register_duplicate_username(self, client: TestClient):
         payload = {

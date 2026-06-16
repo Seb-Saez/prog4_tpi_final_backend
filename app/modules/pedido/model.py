@@ -35,6 +35,8 @@ class Pedido(BaseEntity, table=True):
     mp_preference_id: Optional[str] = None
     mp_payment_id: Optional[str] = None
     mp_payment_status: Optional[str] = None
+    # UUID generado por el backend para evitar cobros duplicados en MercadoPago.
+    idempotency_key: Optional[str] = Field(default=None, index=True)
 
     usuario: "Usuario" = Relationship(back_populates="pedidos")
     estado_pedido: "EstadoPedido" = Relationship(back_populates="pedidos")

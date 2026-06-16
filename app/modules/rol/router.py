@@ -45,7 +45,7 @@ def assign_user_rol(
 ):
     with rol_uow, user_uow:
         service = RolService(rol_uow, user_uow)
-        return service.assign_rol(user_id, payload.rol_codigo)
+        return service.assign_rol(user_id, payload.rol_codigo, payload.expires_at)
 
 
 @admin.delete("/admin/usuarios/{user_id}/roles/{rol_codigo}", response_model=UserPublic)

@@ -4,11 +4,17 @@ from sqlmodel import Session
 
 from app.modules.ingrediente.model import Ingrediente
 from app.modules.ingrediente.schema import (
+    AjustarStockRequest,
     IngredienteCreate,
     IngredienteUpdate,
     IngredienteResponse,
 )
 from app.modules.ingrediente.unit_of_work import IngredienteUnitOfWork
+from app.modules.ingrediente.utils import (
+    obtener_productos_afectados_por_ingrediente,
+    producto_tiene_todos_ingredientes_en_stock,
+)
+from app.core.datetime_utils import utcnow
 from datetime import datetime
 
 
@@ -60,6 +66,55 @@ class IngredienteService:
             ingrediente = self._get_or_404(uow, ingrediente_id)
             uow.ingredientes.delete(ingrediente)
             return True
+
+    def ajustar_stock(self, ingrediente_id: int, data: AjustarStockRequest) -> Ingrediente:
+        """Ajusta el stock del ingrediente y actualiza la disponibilidad de
+        los productos afectados dentro del mismo UoW.
+
+        - Si stock_cantidad == 0 (faltante): pone disponible=False en los
+          productos que usan este ingrediente como no-removible y cuya
+          categoría requiere_ingredientes=True.
+        - Si stock_cantidad > 0 (reposición): reactiva (disponible=True)
+          los productos afectados que ya NO tienen otro ingrediente
+          no-removible con stock == 0.
+        """
+        with IngredienteUnitOfWork(self._session) as uow:
+            ingrediente = self._get_or_404(uow, ingrediente_id)
+            ingrediente.stock_cantidad = data.stock_cantidad
+            ingrediente.updated_at = utcnow()
+            uow.ingredientes.add(ingrediente)
+
+            # Actualizar disponibilidad de productos afectados
+            productos_afectados = obtener_productos_afectados_por_ingrediente(
+                uow.session, ingrediente_id
+            )
+
+            for producto in productos_afectados:
+                if data.stock_cantidad == 0:
+                    # Marcar faltante → deshabilitar producto y registrar causa
+                    if producto.disponible:
+                        producto.disponible = False
+                        producto.deshabilitado_por_stock = True
+                        producto.updated_at = utcnow()
+                        uow.session.add(producto)
+                else:
+                    # Reposición → reactivar solo si fue auto-deshabilitado por stock
+                    # y ya no tiene otros ingredientes faltantes
+                    if not producto.disponible and producto.deshabilitado_por_stock:
+                        if producto_tiene_todos_ingredientes_en_stock(uow.session, producto.id):
+                            producto.disponible = True
+                            producto.deshabilitado_por_stock = False
+                            producto.updated_at = utcnow()
+                            uow.session.add(producto)
+
+            return ingrediente
+
+
+def ajustar_stock_ingrediente(
+    session: Session, ingrediente_id: int, data: AjustarStockRequest
+) -> Ingrediente:
+    service = IngredienteService(session)
+    return service.ajustar_stock(ingrediente_id, data)
 
 
 def create_ingrediente(session: Session, data: IngredienteCreate) -> Ingrediente:

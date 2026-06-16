@@ -33,12 +33,12 @@ ROLES_SEED: list[dict] = [
         "descripcion": "Acceso total sin restricciones",
     },
     {
-        "codigo": "PEDIDOS",
-        "descripcion": "Avanzar estados de pedidos",
+        "codigo": "COCINA",
+        "descripcion": "Gestionar y avanzar estados de pedidos en preparación",
     },
     {
-        "codigo": "STOCK",
-        "descripcion": "Actualizar stock, gestionar productos, confirmar pedidos",
+        "codigo": "CAJA",
+        "descripcion": "Confirmar pedidos, actualizar stock e ingredientes",
     },
     {
         "codigo": "CLIENT",

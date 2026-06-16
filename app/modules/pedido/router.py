@@ -9,7 +9,14 @@ from app.core.websocket import broadcast_estado_cambiado
 from app.modules.rol.enums import RolEnum
 from app.modules.usuarios.schema import UserPublic
 
-from .schema import AvanzarEstadoRequest, PedidoCreate, PedidoResponse, PedidoResumen
+from .schema import (
+    AvanzarEstadoRequest,
+    CancelarPedidoRequest,
+    HistorialEstadoOut,
+    PedidoCreate,
+    PedidoResponse,
+    PedidoResumen,
+)
 from .service import PedidoService
 
 
@@ -76,22 +83,39 @@ def obtener_pedido(
     return PedidoService(session).get_pedido(pedido_id, usuario)
 
 
-@router_pedido.patch(
-    "/{pedido_id}/cancelar",
+@router_pedido.get(
+    "/{pedido_id}/historial",
+    response_model=list[HistorialEstadoOut],
+)
+def historial_pedido(
+    pedido_id: Annotated[int, Path(ge=1)],
+    usuario: Annotated[UserPublic, Depends(get_current_active_user)],
+    session: Session = Depends(get_session),
+):
+    """Historial completo de transiciones del pedido. ORDER BY fecha_cambio ASC."""
+    return PedidoService(session).list_historial(pedido_id, usuario)
+
+
+@router_pedido.delete(
+    "/{pedido_id}",
     response_model=PedidoResponse,
 )
 def cancelar_pedido(
     pedido_id: Annotated[int, Path(ge=1)],
+    body: CancelarPedidoRequest,
     usuario: Annotated[UserPublic, Depends(get_current_active_user)],
     session: Session = Depends(get_session),
     background_tasks: BackgroundTasks = BackgroundTasks(),
 ):
-    """Cancela un pedido si el estado actual lo permite. Dueño o admin/cocina."""
+    """Cancela un pedido si el estado actual lo permite. Dueño o admin/cocina.
+
+    RN-05: el motivo es obligatorio y queda registrado en el historial.
+    """
     service = PedidoService(session)
     current = service.get_pedido(pedido_id, usuario)
     estado_anterior: str | None = current.estado_pedido.codigo
 
-    pedido = service.cancelar(pedido_id, usuario)
+    pedido = service.cancelar(pedido_id, usuario, body.motivo)
 
     background_tasks.add_task(
         broadcast_estado_cambiado,
@@ -99,6 +123,7 @@ def cancelar_pedido(
         estado_anterior=estado_anterior,
         estado_nuevo=pedido.estado_pedido_codigo,
         usuario_id=usuario.id,
+        motivo=body.motivo,
     )
 
     return pedido
@@ -111,7 +136,7 @@ def cancelar_pedido(
 @router_pedido.get(
     "/",
     response_model=list[PedidoResumen],
-    dependencies=[Depends(require_role([RolEnum.ADMIN, RolEnum.PEDIDOS]))],
+    dependencies=[Depends(require_role([RolEnum.ADMIN, RolEnum.COCINA, RolEnum.CAJA]))],
 )
 def listar_todos(
     session: Session = Depends(get_session),
@@ -133,7 +158,7 @@ def avanzar_estado(
     pedido_id: Annotated[int, Path(ge=1)],
     usuario: Annotated[
         UserPublic,
-        Depends(require_role([RolEnum.ADMIN, RolEnum.PEDIDOS])),
+        Depends(require_role([RolEnum.ADMIN, RolEnum.COCINA, RolEnum.CAJA])),
     ],
     session: Session = Depends(get_session),
     background_tasks: BackgroundTasks = BackgroundTasks(),

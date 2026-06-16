@@ -1,7 +1,9 @@
 import logging
+import uuid
 from decimal import Decimal
 
 import mercadopago
+from mercadopago.config import RequestOptions
 from fastapi import HTTPException, status
 from sqlmodel import Session
 
@@ -11,6 +13,7 @@ from app.modules.pago.model import Pago
 from app.modules.pedido.model import Pedido
 from app.modules.pedido.unit_of_work import PedidoUnitOfWork
 from app.modules.usuarios.schema import UserPublic
+from app.modules.rol.enums import RolEnum
 
 logger = logging.getLogger(__name__)
 
@@ -38,9 +41,18 @@ class PagoService:
             if pedido.mp_preference_id is not None:
                 return self._devolver_preferencia_existente(pedido)
 
-            preference_data = self._armar_preferencia(pedido)
+            # Idempotency key UUID generado por el backend. Evita que un reintento
+            # del cliente cree dos cobros para el mismo pedido (MP lo deduplica por
+            # este header). Se persiste para reusarlo en el webhook.
+            if pedido.idempotency_key is None:
+                pedido.idempotency_key = str(uuid.uuid4())
 
-            result = self._sdk.preference().create(preference_data)
+            preference_data = self._armar_preferencia(pedido)
+            request_options = RequestOptions(
+                custom_headers={"x-idempotency-key": pedido.idempotency_key}
+            )
+
+            result = self._sdk.preference().create(preference_data, request_options)
 
             if result["status"] not in (200, 201):
                 logger.error(
@@ -98,23 +110,16 @@ class PagoService:
         pedido_id = int(external_ref)
         status_mp = payment_data.get("status")
 
-        # Clave de idempotencia: usa el header si viene, sino el payment_id
-        idempotency_key = (
-            data.get("idempotency_key")
-            or data.get("x-idempotency-key")
-            or str(payment_id)
-        )
-
         estado_anterior: str | None = None
         should_advance = False
 
         with PedidoUnitOfWork(self._session) as uow:
-            # Control de idempotencia — evitar reprocesar el mismo pago
-            pago_existente = uow.pagos.get_by_idempotency_key(idempotency_key)
+            # Control de idempotencia — no reprocesar el mismo pago de MercadoPago.
+            pago_existente = uow.pagos.get_by_mp_payment_id(str(payment_id))
             if pago_existente is not None:
                 logger.info(
-                    "Webhook idempotente: pago %s ya procesado (id=%s)",
-                    idempotency_key,
+                    "Webhook idempotente: payment %s ya procesado (id=%s)",
+                    payment_id,
                     pago_existente.id,
                 )
                 return
@@ -124,7 +129,8 @@ class PagoService:
                 logger.warning("Webhook: pedido %s no encontrado", pedido_id)
                 return
 
-            # Registrar fila de pago
+            # Registrar fila de pago. La idempotency_key es el UUID que el backend
+            # generó al crear la preferencia (str(payment_id) como fallback).
             raw_amount = payment_data.get("transaction_amount")
             pago = Pago(
                 pedido_id=pedido_id,
@@ -135,7 +141,7 @@ class PagoService:
                     Decimal(str(raw_amount)) if raw_amount is not None else None
                 ),
                 payment_method_id=payment_data.get("payment_method_id"),
-                idempotency_key=idempotency_key,
+                idempotency_key=pedido.idempotency_key or str(payment_id),
                 external_reference=external_ref,
             )
             uow.pagos.add(pago)
@@ -176,6 +182,36 @@ class PagoService:
                     e,
                     exc_info=True,
                 )
+
+    def get_pago_por_pedido(self, pedido_id: int, usuario: UserPublic) -> Pago:
+        """Devuelve el pago asociado a un pedido. Acceso: dueño o admin/pedidos."""
+        with PedidoUnitOfWork(self._session) as uow:
+            pedido = uow.pedidos.get_full(pedido_id)
+            if pedido is None:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="Pedido no encontrado",
+                )
+            self._asegurar_acceso(pedido, usuario)
+
+            pago = uow.pagos.get_latest_by_pedido(pedido_id)
+            if pago is None:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="No hay pagos registrados para este pedido",
+                )
+            return pago
+
+    @staticmethod
+    def _asegurar_acceso(pedido: Pedido, usuario: UserPublic) -> None:
+        if pedido.usuario_id == usuario.id:
+            return
+        if set(usuario.roles) & {RolEnum.ADMIN, RolEnum.COCINA, RolEnum.CAJA}:
+            return
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="No tenés acceso a este pago",
+        )
 
     @staticmethod
     def _asegurar_propietario(pedido: Pedido, usuario: UserPublic) -> None:

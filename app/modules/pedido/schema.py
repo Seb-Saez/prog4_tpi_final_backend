@@ -23,6 +23,18 @@ class AvanzarEstadoRequest(SQLModel):
     nuevo_estado: Optional[str] = None
     motivo: Optional[str] = None
 
+    @model_validator(mode="after")
+    def _motivo_obligatorio_si_cancela(self) -> "AvanzarEstadoRequest":
+        # RN-05: el motivo es obligatorio cuando la transición es a CANCELADO.
+        if self.nuevo_estado == "CANCELADO" and not (self.motivo and self.motivo.strip()):
+            raise ValueError("El motivo es obligatorio para cancelar un pedido (RN-05)")
+        return self
+
+
+class CancelarPedidoRequest(SQLModel):
+    """Payload para cancelar un pedido. RN-05: el motivo es obligatorio."""
+    motivo: str = Field(min_length=1, max_length=500)
+
 
 class PedidoCreate(SQLModel):
     """Payload para crear un pedido desde el carrito.

@@ -3,41 +3,45 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlmodel import SQLModel, Session, create_engine, select
 from sqlalchemy import ARRAY, BigInteger, event, TypeDecorator
+from sqlalchemy.dialects.postgresql import ARRAY as PG_ARRAY
 from sqlalchemy.ext.compiler import compiles
 
 
-@compiles(ARRAY, "sqlite")
-def _compile_array_sqlite(type_, compiler, **kw):
-    return "TEXT"
+# Los modelos usan tanto sqlalchemy.ARRAY como dialects.postgresql.ARRAY
+# (ej. Producto.imagenes_url). Ambas clases deben compilar a TEXT y serializar
+# las listas a JSON en SQLite, o el seed del lifespan rompe toda la suite.
+def _patch_array_for_sqlite(array_cls) -> None:
+    @compiles(array_cls, "sqlite")
+    def _compile_array_sqlite(type_, compiler, **kw):  # noqa: ANN001, ARG001
+        return "TEXT"
+
+    orig_bind = array_cls.bind_processor
+    orig_result = array_cls.result_processor
+
+    def _patched_bind_processor(self, dialect):
+        if dialect.name == "sqlite":
+            def process(value):
+                if value is not None:
+                    return json.dumps(list(value))
+                return value
+            return process
+        return orig_bind(self, dialect)
+
+    def _patched_result_processor(self, dialect, coltype):
+        if dialect.name == "sqlite":
+            def process(value):
+                if value is not None:
+                    return json.loads(value)
+                return value
+            return process
+        return orig_result(self, dialect, coltype)
+
+    array_cls.bind_processor = _patched_bind_processor
+    array_cls.result_processor = _patched_result_processor
 
 
-# Monkey-patch ARRAY bind_processor for SQLite so lists are serialized to JSON
-_orig_bind_processor = ARRAY.bind_processor
-_orig_result_processor = ARRAY.result_processor
-
-
-def _patched_bind_processor(self, dialect):
-    if dialect.name == "sqlite":
-        def process(value):
-            if value is not None:
-                return json.dumps(list(value))
-            return value
-        return process
-    return _orig_bind_processor(self, dialect)
-
-
-def _patched_result_processor(self, dialect, coltype):
-    if dialect.name == "sqlite":
-        def process(value):
-            if value is not None:
-                return json.loads(value)
-            return value
-        return process
-    return _orig_result_processor(self, dialect, coltype)
-
-
-ARRAY.bind_processor = _patched_bind_processor
-ARRAY.result_processor = _patched_result_processor
+_patch_array_for_sqlite(ARRAY)
+_patch_array_for_sqlite(PG_ARRAY)
 
 
 @compiles(BigInteger, "sqlite")
@@ -77,6 +81,19 @@ TEST_EMAIL = "test@mail.com"
 TEST_PASSWORD = "Test1234!"
 TEST_USERNAME = "testuser"
 TEST_FULLNAME = "Test User"
+
+
+@pytest.fixture(autouse=True)
+def _reset_rate_limiters():
+    """El rate limiter es estado global in-memory; sin reset, los 429 de un test
+    contaminan los siguientes. Se limpia antes de cada test."""
+    from app.core.rate_limit import register_limiter, login_limiter
+
+    for limiter in (register_limiter, login_limiter):
+        store = getattr(limiter, "requests", None)
+        if store is not None and hasattr(store, "clear"):
+            store.clear()
+    yield
 
 
 @pytest.fixture

@@ -19,6 +19,7 @@ para poder extraer la IP del cliente.
 """
 from fastapi_throttle import RateLimiter
 
-register_limiter = RateLimiter(times=3, seconds=60)  # 3 requests por minuto
+# Spec 4.3: máximo 5 intentos por IP en 15 minutos, tanto en login como register.
+register_limiter = RateLimiter(times=5, seconds=900)  # 5 requests por 15 minutos (spec)
 
 login_limiter = RateLimiter(times=5, seconds=900)  # 5 requests por 15 minutos (spec)

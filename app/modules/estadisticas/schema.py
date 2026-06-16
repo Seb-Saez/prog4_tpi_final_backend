@@ -11,6 +11,15 @@ class ResumenKPI(SQLModel):
     ticket_promedio: Decimal
     pedidos_pendientes: int
     productos_activos: int
+    ventas_hoy: Decimal
+    ventas_mes: Decimal
+
+
+class IngresosPorFormaPago(SQLModel):
+    """Ingresos agrupados por forma de pago (excluye pedidos CANCELADO)."""
+    forma_pago: str
+    total: Decimal
+    cantidad: int
 
 
 class PeriodoVentas(SQLModel):

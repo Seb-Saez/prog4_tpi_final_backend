@@ -156,9 +156,58 @@ class TestPedido:
             "items": [{"producto_id": producto_id, "cantidad": 1}],
         })
         pid = created.json()["id"]
-        resp = client.patch(f"{self.ENDPOINT}/{pid}/cancelar")
+        resp = client.request(
+            "DELETE", f"{self.ENDPOINT}/{pid}", json={"motivo": "Me arrepentí"}
+        )
         assert resp.status_code == 200
-        assert resp.json()["estado_pedido"]["codigo"] == "CANCELADO"
+        data = resp.json()
+        assert data["estado_pedido"]["codigo"] == "CANCELADO"
+        # RN-05: el motivo queda registrado en el historial.
+        ultimo = data["historial_estado_pedido"][-1]
+        assert ultimo["estado_nuevo"] == "CANCELADO"
+        assert ultimo["motivo"] == "Me arrepentí"
+
+    def test_cancelar_pedido_sin_motivo_rechazado(
+        self, client: TestClient, client_token, producto_id, forma_pago_id
+    ):
+        """RN-05: cancelar sin motivo devuelve 422."""
+        _as(client, client_token)
+        created = client.post(self.ENDPOINT, json={
+            "modalidad_entrega": "RETIRO_LOCAL",
+            "forma_pago_id": forma_pago_id,
+            "items": [{"producto_id": producto_id, "cantidad": 1}],
+        })
+        pid = created.json()["id"]
+        # Sin body
+        resp = client.request("DELETE", f"{self.ENDPOINT}/{pid}")
+        assert resp.status_code == 422
+        # Motivo vacío
+        resp = client.request("DELETE", f"{self.ENDPOINT}/{pid}", json={"motivo": ""})
+        assert resp.status_code == 422
+
+    def test_historial_pedido(
+        self, client: TestClient, admin_token, client_token, producto_id, forma_pago_id
+    ):
+        _as(client, client_token)
+        created = client.post(self.ENDPOINT, json={
+            "modalidad_entrega": "RETIRO_LOCAL",
+            "forma_pago_id": forma_pago_id,
+            "items": [{"producto_id": producto_id, "cantidad": 1}],
+        })
+        pid = created.json()["id"]
+
+        _as(client, admin_token)
+        client.patch(f"{self.ENDPOINT}/{pid}/avanzar")
+
+        _as(client, client_token)
+        resp = client.get(f"{self.ENDPOINT}/{pid}/historial")
+        assert resp.status_code == 200
+        historial = resp.json()
+        assert len(historial) == 2
+        # ORDER BY fecha_cambio ASC — la creación primero
+        assert historial[0]["estado_anterior"] is None
+        assert historial[0]["estado_nuevo"] == "PENDIENTE"
+        assert historial[1]["estado_nuevo"] == "CONFIRMADO"
 
     def test_listar_todos_admin(self, client: TestClient, admin_token, client_token, producto_id,
                                   forma_pago_id):

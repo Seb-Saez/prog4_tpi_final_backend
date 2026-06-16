@@ -14,6 +14,7 @@ from app.core.deps import require_role
 from app.modules.rol.enums import RolEnum
 
 from .schema import (
+    IngresosPorFormaPago,
     PedidosPorEstado,
     PeriodoVentas,
     ProductoMasVendido,
@@ -21,6 +22,7 @@ from .schema import (
     VentasPorCategoria,
 )
 from .service import (
+    obtener_ingresos_por_forma_pago,
     obtener_pedidos_por_estado,
     obtener_productos_mas_vendidos,
     obtener_resumen,
@@ -100,3 +102,14 @@ def pedidos_por_estado(
 ) -> list[PedidosPorEstado]:
     """Distribución de pedidos agrupados por estado (incluye todos los estados con pedidos)."""
     return obtener_pedidos_por_estado(session)
+
+
+@router_estadisticas.get("/ingresos-por-forma-pago", response_model=list[IngresosPorFormaPago])
+def ingresos_por_forma_pago(
+    session: Session = Depends(get_session),
+) -> list[IngresosPorFormaPago]:
+    """Ingresos y cantidad de pedidos agrupados por forma de pago.
+
+    Excluye pedidos en estado CANCELADO (EST-01).
+    """
+    return obtener_ingresos_por_forma_pago(session)

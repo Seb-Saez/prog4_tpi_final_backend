@@ -14,6 +14,7 @@ class Categoria(BaseEntity, table=True):
     nombre: str
     descripcion: str
     imagen_url: Optional[str] = None
+    requiere_ingredientes: bool = Field(default=True)
 
     productos: List["Producto"] = Relationship(
         back_populates="categorias",

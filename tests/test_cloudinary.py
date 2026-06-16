@@ -19,7 +19,13 @@ class TestCloudinaryUpload:
     @pytest.fixture
     def mock_cloudinary_upload(self):
         with patch("app.modules.cloudinary.router.cloudinary.uploader.upload") as mock:
-            mock.return_value = {"secure_url": "https://res.cloudinary.com/demo/image/upload/v1/test.jpg"}
+            mock.return_value = {
+                "secure_url": "https://res.cloudinary.com/demo/image/upload/v1/test.jpg",
+                "public_id": "test",
+                "width": 800,
+                "height": 600,
+                "format": "jpg",
+            }
             yield mock
 
     def test_upload_ok(self, client: TestClient, admin_headers, mock_image_file,

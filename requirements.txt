@@ -1,5 +1,6 @@
 fastapi[standard]
 sqlmodel
+alembic
 pydantic[email]
 passlib[bcrypt]
 PyJWT[crypto]

@@ -485,6 +485,37 @@ manager = ConnectionManager()
 from datetime import datetime, timezone
 
 
+async def broadcast_stock_ingrediente(
+    ingrediente_id: int,
+    nombre: str,
+    stock_cantidad: int,
+) -> None:
+    """Emite el evento ``stock_ingrediente`` al canal admin/staff.
+
+    Se invoca con BackgroundTasks desde el router de ingredientes DESPUÉS
+    del commit exitoso del Unit of Work (post-commit, fuera del UoW).
+
+    Uso desde un router síncrono:
+
+        background_tasks.add_task(
+            broadcast_stock_ingrediente,
+            ingrediente_id=ingrediente.id,
+            nombre=ingrediente.nombre,
+            stock_cantidad=ingrediente.stock_cantidad,
+        )
+    """
+    evento = {
+        "event": "stock_ingrediente",
+        "ingrediente_id": ingrediente_id,
+        "nombre": nombre,
+        "stock_cantidad": stock_cantidad,
+        "faltante": stock_cantidad == 0,
+        "timestamp": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+    }
+
+    await manager.broadcast_to_roles(["admin", "cocina", "caja"], "stock_ingrediente", evento)
+
+
 async def broadcast_estado_cambiado(
     pedido_id: int,
     estado_anterior: str | None,
@@ -503,4 +534,4 @@ async def broadcast_estado_cambiado(
     }
 
     await manager.broadcast_to_order(pedido_id, "estado_cambiado", evento)
-    await manager.broadcast_to_roles(["admin", "pedidos", "stock", "user"], "estado_cambiado", evento)
+    await manager.broadcast_to_roles(["admin", "cocina", "caja", "user"], "estado_cambiado", evento)

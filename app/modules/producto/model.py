@@ -20,6 +20,7 @@ class Producto(BaseEntity, table=True):
     imagenes_url: Optional[list[str]] = Field(default=None, sa_column=Column(ARRAY(String), nullable=True))
     stock_cantidad: int = Field(default=0, ge=0)
     disponible: bool = True
+    deshabilitado_por_stock: bool = Field(default=False)
     unidad_venta_id: Optional[int] = Field(foreign_key="unidad_medida.id", default=None)
 
     categorias: List["Categoria"] = Relationship(

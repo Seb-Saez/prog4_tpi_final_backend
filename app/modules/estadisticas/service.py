@@ -4,7 +4,7 @@ Todas las consultas son de solo lectura; no se modifica ningún modelo.
 Las operaciones de agregación se realizan directamente en la base de datos
 mediante sqlalchemy.func para eficiencia.
 """
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 from typing import Optional
 
@@ -14,10 +14,12 @@ from sqlmodel import Session, select
 from app.modules.categoria.model import Categoria
 from app.modules.detalle_pedido.model import DetallePedido
 from app.modules.estado_pedido.model import EstadoPedido
+from app.modules.forma_pago.model import FormaPago
 from app.modules.pedido.model import Pedido
 from app.modules.producto.model import Producto
 from app.modules.producto_categoria.model import ProductoCategoria
 from .schema import (
+    IngresosPorFormaPago,
     PedidosPorEstado,
     PeriodoVentas,
     ProductoMasVendido,
@@ -35,6 +37,8 @@ def obtener_resumen(session: Session) -> ResumenKPI:
 
     Los pedidos en estado CANCELADO se excluyen de los totales de ventas
     y del ticket promedio. La DB vacía retorna ceros en lugar de None.
+    ventas_hoy y ventas_mes usan filtros de rango datetime (UTC) para ser
+    compatibles tanto con SQLite (tests) como con PostgreSQL (producción).
     """
     # Conteo y suma de pedidos no cancelados
     stmt_ventas = select(
@@ -55,13 +59,80 @@ def obtener_resumen(session: Session) -> ResumenKPI:
     stmt_activos = select(func.count(Producto.id)).where(Producto.disponible == True)  # noqa: E712
     productos_activos = session.exec(stmt_activos).one() or 0
 
+    # ventas_hoy: pedidos del día actual en UTC (rango datetime, compatible con SQLite y Postgres)
+    now_utc = datetime.now(timezone.utc)
+    inicio_hoy = datetime(now_utc.year, now_utc.month, now_utc.day, tzinfo=timezone.utc)
+    inicio_manana = _siguiente_dia(now_utc)
+
+    stmt_hoy = select(
+        func.coalesce(func.sum(Pedido.total), Decimal("0")).label("total")
+    ).where(
+        Pedido.estado_pedido_codigo != _ESTADO_CANCELADO,
+        Pedido.created_at >= inicio_hoy,
+        Pedido.created_at < inicio_manana,
+    )
+    ventas_hoy = Decimal(str(session.exec(stmt_hoy).one() or 0))
+
+    # ventas_mes: pedidos del mes actual en UTC
+    inicio_mes = datetime(now_utc.year, now_utc.month, 1, tzinfo=timezone.utc)
+    if now_utc.month == 12:
+        inicio_mes_sig = datetime(now_utc.year + 1, 1, 1, tzinfo=timezone.utc)
+    else:
+        inicio_mes_sig = datetime(now_utc.year, now_utc.month + 1, 1, tzinfo=timezone.utc)
+
+    stmt_mes = select(
+        func.coalesce(func.sum(Pedido.total), Decimal("0")).label("total")
+    ).where(
+        Pedido.estado_pedido_codigo != _ESTADO_CANCELADO,
+        Pedido.created_at >= inicio_mes,
+        Pedido.created_at < inicio_mes_sig,
+    )
+    ventas_mes = Decimal(str(session.exec(stmt_mes).one() or 0))
+
     return ResumenKPI(
         total_pedidos=row_ventas.total_pedidos or 0,
         ventas_totales=Decimal(str(row_ventas.ventas_totales or 0)),
         ticket_promedio=Decimal(str(row_ventas.ticket_promedio or 0)),
         pedidos_pendientes=pedidos_pendientes,
         productos_activos=productos_activos,
+        ventas_hoy=ventas_hoy,
+        ventas_mes=ventas_mes,
     )
+
+
+def _siguiente_dia(dt: datetime) -> datetime:
+    """Retorna el inicio (00:00:00 UTC) del día siguiente a dt."""
+    siguiente = date(dt.year, dt.month, dt.day) + timedelta(days=1)
+    return datetime(siguiente.year, siguiente.month, siguiente.day, tzinfo=timezone.utc)
+
+
+def obtener_ingresos_por_forma_pago(session: Session) -> list[IngresosPorFormaPago]:
+    """Devuelve ingresos y cantidad de pedidos agrupados por forma de pago.
+
+    Excluye pedidos en estado CANCELADO (EST-01).
+    Agrupa por FormaPago.codigo/descripcion via JOIN Pedido→FormaPago.
+    """
+    stmt = (
+        select(
+            FormaPago.descripcion.label("forma_pago"),
+            func.coalesce(func.sum(Pedido.total), Decimal("0")).label("total"),
+            func.count(Pedido.id).label("cantidad"),
+        )
+        .join(FormaPago, Pedido.forma_pago_id == FormaPago.id)
+        .where(Pedido.estado_pedido_codigo != _ESTADO_CANCELADO)
+        .group_by(FormaPago.id, FormaPago.codigo, FormaPago.descripcion)
+        .order_by(func.sum(Pedido.total).desc())
+    )
+
+    rows = session.exec(stmt).all()
+    return [
+        IngresosPorFormaPago(
+            forma_pago=row.forma_pago,
+            total=Decimal(str(row.total or 0)),
+            cantidad=row.cantidad or 0,
+        )
+        for row in rows
+    ]
 
 
 def obtener_ventas_por_periodo(

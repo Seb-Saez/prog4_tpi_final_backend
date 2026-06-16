@@ -1,5 +1,12 @@
 import pytest
 from fastapi.testclient import TestClient
+from sqlmodel import Session
+
+from app.modules.categoria.model import Categoria
+from app.modules.producto.model import Producto
+from app.modules.ingrediente.model import Ingrediente
+from app.modules.producto_ingrediente.model import ProductoIngrediente
+from app.modules.producto_categoria.model import ProductoCategoria
 
 
 def _as(client, token):
@@ -107,3 +114,272 @@ class TestIngredienteCRUD:
         _as(client, client_token)
         resp = client.delete(f"{self.ENDPOINT}/{ing['id']}")
         assert resp.status_code == 403
+
+
+class TestAjustarStock:
+    """Tests para el endpoint PATCH /ingredientes/{id}/stock (B3)."""
+
+    ENDPOINT = "/api/v1/ingredientes"
+
+    def _setup_producto_con_ingrediente(
+        self,
+        session: Session,
+        ingrediente_nombre: str = "Carne",
+        requiere_ingredientes: bool = True,
+        es_removible: bool = False,
+        stock_inicial: int = 10,
+    ) -> tuple[Producto, Ingrediente]:
+        """
+        Crea directamente en BD un producto, categoría e ingrediente vinculados.
+        Retorna (producto, ingrediente).
+        """
+        categoria = Categoria(
+            nombre=f"Cat-{ingrediente_nombre}",
+            descripcion="Categoría de prueba",
+            requiere_ingredientes=requiere_ingredientes,
+        )
+        session.add(categoria)
+        session.flush()
+
+        producto = Producto(
+            nombre=f"Prod-{ingrediente_nombre}",
+            descripcion="Producto de prueba",
+            precio_base=100,
+            stock_cantidad=5,
+            disponible=True,
+        )
+        session.add(producto)
+        session.flush()
+
+        session.add(ProductoCategoria(
+            producto_id=producto.id,
+            categoria_id=categoria.id,
+            es_principal=True,
+        ))
+
+        ingrediente = Ingrediente(
+            nombre=ingrediente_nombre,
+            descripcion=ingrediente_nombre,
+            es_alergeno=False,
+            stock_cantidad=stock_inicial,
+        )
+        session.add(ingrediente)
+        session.flush()
+
+        session.add(ProductoIngrediente(
+            producto_id=producto.id,
+            ingrediente_id=ingrediente.id,
+            cantidad=100,
+            es_removible=es_removible,
+        ))
+        session.commit()
+
+        session.refresh(producto)
+        session.refresh(ingrediente)
+        return producto, ingrediente
+
+    def test_ajustar_stock_admin(self, client: TestClient, admin_headers, session: Session):
+        """Admin puede ajustar el stock de un ingrediente."""
+        _, ing = self._setup_producto_con_ingrediente(session)
+        resp = client.patch(
+            f"{self.ENDPOINT}/{ing.id}/stock",
+            json={"stock_cantidad": 5},
+        )
+        assert resp.status_code == 200
+        assert resp.json()["stock_cantidad"] == 5
+
+    def test_ajustar_stock_forbidden_client(self, client: TestClient, client_headers, session: Session):
+        """Un cliente no puede ajustar stock."""
+        _, ing = self._setup_producto_con_ingrediente(session)
+        resp = client.patch(
+            f"{self.ENDPOINT}/{ing.id}/stock",
+            json={"stock_cantidad": 0},
+        )
+        assert resp.status_code == 403
+
+    def test_faltante_deshabilita_producto(self, client: TestClient, admin_headers, session: Session):
+        """Al marcar un ingrediente como faltante (stock=0), el producto se deshabilita."""
+        producto, ing = self._setup_producto_con_ingrediente(
+            session, stock_inicial=10, es_removible=False
+        )
+        assert producto.disponible is True
+
+        resp = client.patch(
+            f"{self.ENDPOINT}/{ing.id}/stock",
+            json={"stock_cantidad": 0},
+        )
+        assert resp.status_code == 200
+        assert resp.json()["stock_cantidad"] == 0
+
+        session.refresh(producto)
+        assert producto.disponible is False
+
+    def test_faltante_no_afecta_ingrediente_removible(
+        self, client: TestClient, admin_headers, session: Session
+    ):
+        """Un ingrediente removible NO deshabilita el producto al faltar."""
+        producto, ing = self._setup_producto_con_ingrediente(
+            session, ingrediente_nombre="SalsaRemovible",
+            es_removible=True, stock_inicial=10,
+        )
+        assert producto.disponible is True
+
+        resp = client.patch(
+            f"{self.ENDPOINT}/{ing.id}/stock",
+            json={"stock_cantidad": 0},
+        )
+        assert resp.status_code == 200
+
+        session.refresh(producto)
+        assert producto.disponible is True
+
+    def test_faltante_no_afecta_categoria_sin_requiere(
+        self, client: TestClient, admin_headers, session: Session
+    ):
+        """Un ingrediente faltante NO deshabilita productos de categorías con requiere_ingredientes=False."""
+        producto, ing = self._setup_producto_con_ingrediente(
+            session, ingrediente_nombre="GaseosaBase",
+            requiere_ingredientes=False, es_removible=False, stock_inicial=10,
+        )
+        assert producto.disponible is True
+
+        resp = client.patch(
+            f"{self.ENDPOINT}/{ing.id}/stock",
+            json={"stock_cantidad": 0},
+        )
+        assert resp.status_code == 200
+
+        session.refresh(producto)
+        assert producto.disponible is True
+
+    def test_reposicion_reactiva_producto(self, client: TestClient, admin_headers, session: Session):
+        """Al reponer un ingrediente (stock > 0), el producto vuelve a estar disponible."""
+        producto, ing = self._setup_producto_con_ingrediente(
+            session, stock_inicial=10, es_removible=False
+        )
+
+        # Marcar faltante
+        client.patch(
+            f"{self.ENDPOINT}/{ing.id}/stock",
+            json={"stock_cantidad": 0},
+        )
+        session.refresh(producto)
+        assert producto.disponible is False
+
+        # Reponer
+        resp = client.patch(
+            f"{self.ENDPOINT}/{ing.id}/stock",
+            json={"stock_cantidad": 20},
+        )
+        assert resp.status_code == 200
+        assert resp.json()["stock_cantidad"] == 20
+
+        session.refresh(producto)
+        assert producto.disponible is True
+
+    def test_reposicion_no_reactiva_con_otro_faltante(
+        self, client: TestClient, admin_headers, session: Session
+    ):
+        """Reponer un ingrediente NO reactiva el producto si otro ingrediente no-removible sigue en 0."""
+        categoria = Categoria(
+            nombre="Cat-Doble",
+            descripcion="Categoría doble ingrediente",
+            requiere_ingredientes=True,
+        )
+        session.add(categoria)
+        session.flush()
+
+        producto = Producto(
+            nombre="Prod-Doble",
+            descripcion="Producto con dos ingredientes obligatorios",
+            precio_base=100,
+            stock_cantidad=5,
+            disponible=True,
+        )
+        session.add(producto)
+        session.flush()
+
+        session.add(ProductoCategoria(
+            producto_id=producto.id,
+            categoria_id=categoria.id,
+            es_principal=True,
+        ))
+
+        ing1 = Ingrediente(nombre="Ing1-Doble", descripcion="Ing1", es_alergeno=False, stock_cantidad=10)
+        ing2 = Ingrediente(nombre="Ing2-Doble", descripcion="Ing2", es_alergeno=False, stock_cantidad=10)
+        session.add(ing1)
+        session.add(ing2)
+        session.flush()
+
+        session.add(ProductoIngrediente(producto_id=producto.id, ingrediente_id=ing1.id, cantidad=1, es_removible=False))
+        session.add(ProductoIngrediente(producto_id=producto.id, ingrediente_id=ing2.id, cantidad=1, es_removible=False))
+        session.commit()
+        session.refresh(ing1)
+        session.refresh(ing2)
+
+        # Marcar ambos como faltantes
+        client.patch(f"{self.ENDPOINT}/{ing1.id}/stock", json={"stock_cantidad": 0})
+        client.patch(f"{self.ENDPOINT}/{ing2.id}/stock", json={"stock_cantidad": 0})
+
+        session.refresh(producto)
+        assert producto.disponible is False
+
+        # Reponer solo ing1 — el producto sigue deshabilitado por ing2
+        resp = client.patch(f"{self.ENDPOINT}/{ing1.id}/stock", json={"stock_cantidad": 5})
+        assert resp.status_code == 200
+
+        session.refresh(producto)
+        assert producto.disponible is False
+
+    def test_reposicion_no_reactiva_producto_deshabilitado_manualmente(
+        self, client: TestClient, admin_headers, session: Session
+    ):
+        """Reponer un ingrediente NO reactiva un producto deshabilitado manualmente
+        (deshabilitado_por_stock=False), aunque ahora tenga todos los ingredientes en stock."""
+        producto, ing = self._setup_producto_con_ingrediente(
+            session, ingrediente_nombre="Carne-Manual", stock_inicial=10, es_removible=False
+        )
+
+        # Admin deshabilita manualmente (sin tocar el stock)
+        producto.disponible = False
+        producto.deshabilitado_por_stock = False
+        session.add(producto)
+        session.commit()
+        session.refresh(producto)
+        assert producto.disponible is False
+        assert producto.deshabilitado_por_stock is False
+
+        # Ajustar el stock del ingrediente (sigue > 0, así que es "reposición")
+        resp = client.patch(
+            f"{self.ENDPOINT}/{ing.id}/stock",
+            json={"stock_cantidad": 20},
+        )
+        assert resp.status_code == 200
+
+        session.refresh(producto)
+        # El producto debe seguir deshabilitado — se deshabilitó manualmente
+        assert producto.disponible is False
+        assert producto.deshabilitado_por_stock is False
+
+    def test_reposicion_reactiva_producto_auto_deshabilitado_y_limpia_flag(
+        self, client: TestClient, admin_headers, session: Session
+    ):
+        """Reponer un ingrediente reactiva el producto auto-deshabilitado por stock
+        y limpia el flag deshabilitado_por_stock."""
+        producto, ing = self._setup_producto_con_ingrediente(
+            session, ingrediente_nombre="Carne-Auto", stock_inicial=10, es_removible=False
+        )
+
+        # Marcar faltante → auto-deshabilita el producto y setea el flag
+        client.patch(f"{self.ENDPOINT}/{ing.id}/stock", json={"stock_cantidad": 0})
+        session.refresh(producto)
+        assert producto.disponible is False
+        assert producto.deshabilitado_por_stock is True
+
+        # Reponer → debe reactivar y limpiar el flag
+        resp = client.patch(f"{self.ENDPOINT}/{ing.id}/stock", json={"stock_cantidad": 15})
+        assert resp.status_code == 200
+
+        session.refresh(producto)
+        assert producto.disponible is True
+        assert producto.deshabilitado_por_stock is False

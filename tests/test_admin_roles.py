@@ -17,7 +17,7 @@ class TestAdminRoles:
         assert isinstance(data, list)
         codigos = {r["codigo"] for r in data}
         assert "ADMIN" in codigos
-        assert "CLIENTE" in codigos
+        assert "CLIENT" in codigos
         assert "COCINA" in codigos
         assert "CAJA" in codigos
 
@@ -34,10 +34,10 @@ class TestAdminRoles:
         })
         uid = reg.json()["id"]
         resp = client.post(f"/api/v1/admin/usuarios/{uid}/roles", json={
-            "rol_codigo": "COCINA",
+            "rol_codigo": "CAJA",
         })
         assert resp.status_code == 200
-        assert "COCINA" in resp.json()["roles"]
+        assert "CAJA" in resp.json()["roles"]
 
     def test_assign_role_forbidden_client(self, client: TestClient, admin_token, client_token):
         reg = client.post("/api/v1/auth/register", json={
@@ -49,7 +49,7 @@ class TestAdminRoles:
         uid = reg.json()["id"]
         _as(client, client_token)
         resp = client.post(f"/api/v1/admin/usuarios/{uid}/roles", json={
-            "rol_codigo": "COCINA",
+            "rol_codigo": "CAJA",
         })
         assert resp.status_code == 403
 
@@ -76,11 +76,11 @@ class TestAdminRoles:
         uid = reg.json()["id"]
 
         client.post(f"/api/v1/admin/usuarios/{uid}/roles", json={
-            "rol_codigo": "COCINA",
+            "rol_codigo": "CAJA",
         })
-        resp = client.delete(f"/api/v1/admin/usuarios/{uid}/roles/COCINA")
+        resp = client.delete(f"/api/v1/admin/usuarios/{uid}/roles/CAJA")
         assert resp.status_code == 200
-        assert "COCINA" not in resp.json()["roles"]
+        assert "CAJA" not in resp.json()["roles"]
 
     def test_remove_role_forbidden_client(self, client: TestClient, admin_token, client_token):
         reg = client.post("/api/v1/auth/register", json={
@@ -92,5 +92,5 @@ class TestAdminRoles:
         uid = reg.json()["id"]
 
         _as(client, client_token)
-        resp = client.delete(f"/api/v1/admin/usuarios/{uid}/roles/COCINA")
+        resp = client.delete(f"/api/v1/admin/usuarios/{uid}/roles/CAJA")
         assert resp.status_code == 403
