@@ -40,14 +40,9 @@ async def webhook_mercadopago(
     """
     data = dict(request.query_params)
     if not data:
-<<<<<<< Updated upstream
-        data = request.state.body if hasattr(request.state, "body") else {}
-    PagoService(session).procesar_webhook(data)
-=======
         try:
             data = await request.json()
         except Exception:
             data = {}
     await PagoService(session).procesar_webhook(data)
->>>>>>> Stashed changes
     return {"status": "ok"}

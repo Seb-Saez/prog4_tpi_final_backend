@@ -53,6 +53,8 @@ class ProductoService:
 
     def create(self, data: ProductoCreate) -> Producto:
         with ProductoUnitOfWork(self._session) as uow:
+            if data.imagenes_url is None:
+                data.imagenes_url = []
             producto = Producto.model_validate(data)
 
             if producto.stock_cantidad == 0:
@@ -107,16 +109,12 @@ class ProductoService:
                 )
 
             if "categorias_ids" in data.model_fields_set and data.categorias_ids is not None:
-<<<<<<< Updated upstream
-=======
-                if data.categorias_ids is not None:
->>>>>>> Stashed changes
-                    categorias = list(
+                categorias = list(
                         uow.session.exec(
                             select(Categoria).where(col(Categoria.id).in_(data.categorias_ids))
                         ).all()
                     )
-                    producto.categorias = categorias
+                producto.categorias = categorias
 
             if "ingredientes_ids" in data.model_fields_set and data.ingredientes is not None:
                 self._sync_ingredientes(uow, producto, data.ingredientes)
@@ -142,10 +140,10 @@ class ProductoService:
             uow.productos.add(producto)
             return producto
 
-    def set_imagenes(self, producto_id: int, imagenes_url: List[str]) -> Producto:
+    def set_imagenes(self, producto_id: int, imagenes_url: Optional[List[str]]) -> Producto:
         with ProductoUnitOfWork(self._session) as uow:
             producto = self._get_or_404(uow, producto_id)
-            producto.imagenes_url = imagenes_url
+            producto.imagenes_url = imagenes_url or []
             producto.updated_at = utcnow()
             uow.productos.add(producto)
             return producto
@@ -231,7 +229,7 @@ def set_disponibilidad_producto(
 
 
 def set_imagenes_producto(
-    session: Session, producto_id: int, imagenes_url: list[str]
+    session: Session, producto_id: int, imagenes_url: Optional[List[str]]
 ) -> Producto:
     service = ProductoService(session)
     return service.set_imagenes(producto_id, imagenes_url)

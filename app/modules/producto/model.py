@@ -17,7 +17,7 @@ class Producto(BaseEntity, table=True):
     nombre: str
     descripcion: str
     precio_base: Decimal = Field(max_digits=10, decimal_places=2, ge=0)
-    imagenes_url: list[str] = Field(default_factory=list, sa_column=Column(ARRAY(String)))
+    imagenes_url: Optional[list[str]] = Field(default=None, sa_column=Column(ARRAY(String), nullable=True))
     stock_cantidad: int = Field(default=0, ge=0)
     disponible: bool = True
     unidad_venta_id: Optional[int] = Field(foreign_key="unidad_medida.id", default=None)

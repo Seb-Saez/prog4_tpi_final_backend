@@ -25,10 +25,7 @@ from app.modules.pedido.router import router_pedido
 from app.modules.ws.router import router_ws
 from app.modules.cloudinary.router import router_cloudinary
 from app.modules.pago.router import router_pago
-<<<<<<< Updated upstream
-=======
 from app.modules.estadisticas.router import router_estadisticas
->>>>>>> Stashed changes
 from app.core.config import settings
 
 # ─── Ciclo de vida ────────────────────────────────────────────────────────────

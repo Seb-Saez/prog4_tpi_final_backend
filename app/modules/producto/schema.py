@@ -21,7 +21,7 @@ class ProductoBase(SQLModel):
     nombre: str
     descripcion: str
     precio_base: float = Field(ge=0)
-    imagenes_url: List[str] = []
+    imagenes_url: Optional[List[str]] = None
     stock_cantidad: int = Field(default=0, ge=0)
     disponible: bool = True
     unidad_venta_id: Optional[int] = None
@@ -55,4 +55,4 @@ class DisponibilidadUpdate(SQLModel):
 
 
 class ImagenesUpdate(SQLModel):
-    imagenes_url: List[str]
+    imagenes_url: Optional[List[str]] = None
