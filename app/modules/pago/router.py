@@ -35,6 +35,6 @@ def webhook_mercadopago(
     """Webhook IPN de MercadoPago — sin autenticación."""
     data = dict(request.query_params)
     if not data:
-        data = request.state.body if hasattr(request, "state") else {}
+        data = request.state.body if hasattr(request.state, "body") else {}
     PagoService(session).procesar_webhook(data)
     return {"status": "ok"}

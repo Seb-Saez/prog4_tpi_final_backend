@@ -99,7 +99,6 @@ class ProductoService:
                 )
 
             if "categorias_ids" in data.model_fields_set and data.categorias_ids is not None:
-                if "categorias_ids" is not None:
                     categorias = list(
                         uow.session.exec(
                             select(Categoria).where(col(Categoria.id).in_(data.categorias_ids))

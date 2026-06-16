@@ -24,7 +24,7 @@ from app.modules.pedido.router import router_pedido
 from app.modules.ws.router import router_ws
 from app.modules.cloudinary.router import router_cloudinary
 from app.modules.pago.router import router_pago
-from app.core.config import Settings
+from app.core.config import settings
 
 # ─── Ciclo de vida ────────────────────────────────────────────────────────────
 @asynccontextmanager
@@ -50,8 +50,9 @@ app = FastAPI(lifespan=lifespan)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
+        "*",
         "http://localhost:5173",
-        "http://localhost:3000",
+        "http://localhost:5174",
     ],
     allow_origin_regex=r"https://.*\.ngrok(-free)?\.app",
     allow_credentials=True,
@@ -64,7 +65,7 @@ app.add_middleware(
 @app.get("/pago/resultado")
 def redirect_mp(status: str = Query(...), pedido_id: str = Query(...)):
     return RedirectResponse(
-        f"{Settings.MP_FRONTEND_URL}/pago/resultado?status={status}&pedido_id={pedido_id}"
+        f"{settings.MP_FRONTEND_URL}/pago/resultado?status={status}&pedido_id={pedido_id}"
     )
 
 

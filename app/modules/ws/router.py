@@ -4,7 +4,7 @@ from typing import Annotated
 from fastapi import APIRouter, Cookie, WebSocket, WebSocketDisconnect, status
 from sqlmodel import Session, select
 
-from app.core.database import engine
+from app.core import database as _db
 from app.core.security import decode_access_token
 from app.core.websocket import manager
 from app.modules.pedido.model import Pedido
@@ -50,7 +50,7 @@ async def ws_pedidos(
     rol = _determinar_rol(roles)
     is_staff = _es_staff(rol)
 
-    with Session(engine) as session:
+    with Session(_db.engine) as session:
         user = session.exec(
             select(Usuario).where(Usuario.username == username)
         ).first()
@@ -85,7 +85,7 @@ async def ws_pedidos(
                     continue
 
                 if not is_staff:
-                    with Session(engine) as session:
+                    with Session(_db.engine) as session:
                         pedido = session.exec(
                             select(Pedido).where(Pedido.id == order_id)
                         ).first()
@@ -138,7 +138,7 @@ async def ws_cocina(
         await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
         return
 
-    with Session(engine) as session:
+    with Session(_db.engine) as session:
         user = session.exec(
             select(Usuario).where(Usuario.username == username)
         ).first()
