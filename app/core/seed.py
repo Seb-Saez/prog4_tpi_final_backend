@@ -14,8 +14,10 @@ from app.core.security import hash_password
 from app.modules.categoria.model import Categoria
 from app.modules.estado_pedido.model import EstadoPedido
 from app.modules.forma_pago.model import FormaPago
+from app.modules.ingrediente.model import Ingrediente
 from app.modules.producto.model import Producto
 from app.modules.producto_categoria.model import ProductoCategoria
+from app.modules.producto_ingrediente.model import ProductoIngrediente
 from app.modules.rol.enums import RolEnum
 from app.modules.rol.model import Rol, UsuarioRol
 from app.modules.rol.unit_of_work import RolUnitOfWork
@@ -469,6 +471,146 @@ def seed_productos(session: Session) -> None:
                 producto_id=producto.id,
                 categoria_id=categoria.id,
                 es_principal=True,
+            )
+        )
+        creados = True
+
+    if creados:
+        session.commit()
+
+
+# Catálogo de ingredientes. es_alergeno marca los de declaración obligatoria
+# (gluten, lácteos, huevo).
+INGREDIENTES_SEED: list[dict] = [
+    {"nombre": "Carne",            "descripcion": "Carne vacuna picada",        "es_alergeno": False},
+    {"nombre": "Pan",             "descripcion": "Pan de papa para hamburguesa", "es_alergeno": True},
+    {"nombre": "Lechuga",          "descripcion": "Lechuga fresca",             "es_alergeno": False},
+    {"nombre": "Tomate",           "descripcion": "Tomate fresco",              "es_alergeno": False},
+    {"nombre": "Cheddar",          "descripcion": "Queso cheddar",              "es_alergeno": True},
+    {"nombre": "Bacon",            "descripcion": "Panceta ahumada",            "es_alergeno": False},
+    {"nombre": "Cebolla",          "descripcion": "Cebolla",                    "es_alergeno": False},
+    {"nombre": "Huevo",            "descripcion": "Huevo",                      "es_alergeno": True},
+    {"nombre": "Palta",            "descripcion": "Palta",                      "es_alergeno": False},
+    {"nombre": "Rúcula",           "descripcion": "Rúcula fresca",              "es_alergeno": False},
+    {"nombre": "Garbanzos",        "descripcion": "Garbanzos para medallón veggie", "es_alergeno": False},
+    {"nombre": "Muzzarella",       "descripcion": "Queso muzzarella",           "es_alergeno": True},
+    {"nombre": "Salsa de tomate",  "descripcion": "Salsa de tomate",            "es_alergeno": False},
+    {"nombre": "Aceitunas",        "descripcion": "Aceitunas verdes",           "es_alergeno": False},
+    {"nombre": "Albahaca",         "descripcion": "Albahaca fresca",            "es_alergeno": False},
+    {"nombre": "Ajo",              "descripcion": "Ajo",                        "es_alergeno": False},
+    {"nombre": "Pepperoni",        "descripcion": "Pepperoni",                  "es_alergeno": False},
+    {"nombre": "Jamón",            "descripcion": "Jamón cocido",               "es_alergeno": False},
+    {"nombre": "Pollo",            "descripcion": "Pechuga de pollo grillada",  "es_alergeno": False},
+    {"nombre": "Croutons",         "descripcion": "Croutons de pan",            "es_alergeno": True},
+    {"nombre": "Parmesano",        "descripcion": "Queso parmesano",            "es_alergeno": True},
+    {"nombre": "Chocolate",        "descripcion": "Chocolate semiamargo",       "es_alergeno": True},
+    {"nombre": "Dulce de leche",   "descripcion": "Dulce de leche",             "es_alergeno": True},
+]
+
+
+def seed_ingredientes(session: Session) -> None:
+    """Crea los ingredientes que falten. Idempotente: matchea por nombre."""
+    existentes_nombres = {i.nombre for i in session.exec(select(Ingrediente)).all()}
+
+    nuevos = [
+        Ingrediente(**data)
+        for data in INGREDIENTES_SEED
+        if data["nombre"] not in existentes_nombres
+    ]
+    if not nuevos:
+        return
+
+    for ingrediente in nuevos:
+        session.add(ingrediente)
+    session.commit()
+
+
+# Composición de cada producto. Declara producto e ingrediente por nombre, la
+# unidad por símbolo, la cantidad y si el cliente puede quitarlo del pedido.
+PRODUCTO_INGREDIENTES_SEED: list[dict] = [
+    # Hamburguesa Clásica
+    {"producto": "Hamburguesa Clásica", "ingrediente": "Carne",   "cantidad": 150, "unidad": "g",  "es_removible": False},
+    {"producto": "Hamburguesa Clásica", "ingrediente": "Pan",     "cantidad": 1,   "unidad": "ud", "es_removible": False},
+    {"producto": "Hamburguesa Clásica", "ingrediente": "Lechuga", "cantidad": 20,  "unidad": "g",  "es_removible": True},
+    {"producto": "Hamburguesa Clásica", "ingrediente": "Tomate",  "cantidad": 30,  "unidad": "g",  "es_removible": True},
+    {"producto": "Hamburguesa Clásica", "ingrediente": "Cheddar", "cantidad": 1,   "unidad": "ud", "es_removible": True},
+    # Hamburguesa Doble Bacon
+    {"producto": "Hamburguesa Doble Bacon", "ingrediente": "Carne",   "cantidad": 300, "unidad": "g",  "es_removible": False},
+    {"producto": "Hamburguesa Doble Bacon", "ingrediente": "Pan",     "cantidad": 1,   "unidad": "ud", "es_removible": False},
+    {"producto": "Hamburguesa Doble Bacon", "ingrediente": "Cheddar", "cantidad": 2,   "unidad": "ud", "es_removible": False},
+    {"producto": "Hamburguesa Doble Bacon", "ingrediente": "Bacon",   "cantidad": 40,  "unidad": "g",  "es_removible": True},
+    # Hamburguesa Veggie
+    {"producto": "Hamburguesa Veggie", "ingrediente": "Garbanzos", "cantidad": 150, "unidad": "g",  "es_removible": False},
+    {"producto": "Hamburguesa Veggie", "ingrediente": "Pan",       "cantidad": 1,   "unidad": "ud", "es_removible": False},
+    {"producto": "Hamburguesa Veggie", "ingrediente": "Palta",     "cantidad": 50,  "unidad": "g",  "es_removible": True},
+    {"producto": "Hamburguesa Veggie", "ingrediente": "Rúcula",    "cantidad": 20,  "unidad": "g",  "es_removible": True},
+    # Pizza Muzzarella
+    {"producto": "Pizza Muzzarella", "ingrediente": "Salsa de tomate", "cantidad": 100, "unidad": "g", "es_removible": False},
+    {"producto": "Pizza Muzzarella", "ingrediente": "Muzzarella",      "cantidad": 200, "unidad": "g", "es_removible": False},
+    {"producto": "Pizza Muzzarella", "ingrediente": "Aceitunas",       "cantidad": 30,  "unidad": "g", "es_removible": True},
+    # Pizza Napolitana
+    {"producto": "Pizza Napolitana", "ingrediente": "Muzzarella", "cantidad": 200, "unidad": "g", "es_removible": False},
+    {"producto": "Pizza Napolitana", "ingrediente": "Tomate",     "cantidad": 80,  "unidad": "g", "es_removible": False},
+    {"producto": "Pizza Napolitana", "ingrediente": "Ajo",        "cantidad": 5,   "unidad": "g", "es_removible": True},
+    {"producto": "Pizza Napolitana", "ingrediente": "Albahaca",   "cantidad": 5,   "unidad": "g", "es_removible": True},
+    # Pizza Pepperoni
+    {"producto": "Pizza Pepperoni", "ingrediente": "Muzzarella", "cantidad": 200, "unidad": "g", "es_removible": False},
+    {"producto": "Pizza Pepperoni", "ingrediente": "Pepperoni",  "cantidad": 80,  "unidad": "g", "es_removible": False},
+    # Empanada de Carne
+    {"producto": "Empanada de Carne", "ingrediente": "Carne",   "cantidad": 60, "unidad": "g", "es_removible": False},
+    {"producto": "Empanada de Carne", "ingrediente": "Cebolla", "cantidad": 20, "unidad": "g", "es_removible": False},
+    {"producto": "Empanada de Carne", "ingrediente": "Huevo",   "cantidad": 10, "unidad": "g", "es_removible": True},
+    # Empanada de Jamón y Queso
+    {"producto": "Empanada de Jamón y Queso", "ingrediente": "Jamón",      "cantidad": 30, "unidad": "g", "es_removible": False},
+    {"producto": "Empanada de Jamón y Queso", "ingrediente": "Muzzarella", "cantidad": 30, "unidad": "g", "es_removible": False},
+    # Brownie con Helado
+    {"producto": "Brownie con Helado", "ingrediente": "Chocolate", "cantidad": 80, "unidad": "g", "es_removible": False},
+    # Flan Casero
+    {"producto": "Flan Casero", "ingrediente": "Huevo",          "cantidad": 50, "unidad": "g", "es_removible": False},
+    {"producto": "Flan Casero", "ingrediente": "Dulce de leche", "cantidad": 40, "unidad": "g", "es_removible": True},
+    # Ensalada César
+    {"producto": "Ensalada César", "ingrediente": "Lechuga",   "cantidad": 80,  "unidad": "g", "es_removible": False},
+    {"producto": "Ensalada César", "ingrediente": "Pollo",     "cantidad": 100, "unidad": "g", "es_removible": False},
+    {"producto": "Ensalada César", "ingrediente": "Croutons",  "cantidad": 20,  "unidad": "g", "es_removible": True},
+    {"producto": "Ensalada César", "ingrediente": "Parmesano", "cantidad": 15,  "unidad": "g", "es_removible": True},
+]
+
+
+def seed_producto_ingredientes(session: Session) -> None:
+    """
+    Vincula productos con sus ingredientes. Idempotente: matchea por el par
+    (producto_id, ingrediente_id).
+
+    Depende de seed_productos, seed_ingredientes y seed_unidades_medida:
+    resuelve los tres IDs por lookup. Saltea cualquier fila cuyo producto o
+    ingrediente no exista (no rompe el arranque).
+    """
+    productos_por_nombre = {p.nombre: p for p in session.exec(select(Producto)).all()}
+    ingredientes_por_nombre = {i.nombre: i for i in session.exec(select(Ingrediente)).all()}
+    unidades_por_simbolo = {u.simbolo: u for u in session.exec(select(UnidadMedida)).all()}
+    existentes_pares = {
+        (pi.producto_id, pi.ingrediente_id)
+        for pi in session.exec(select(ProductoIngrediente)).all()
+    }
+
+    creados = False
+    for data in PRODUCTO_INGREDIENTES_SEED:
+        producto = productos_por_nombre.get(data["producto"])
+        ingrediente = ingredientes_por_nombre.get(data["ingrediente"])
+        if producto is None or ingrediente is None:
+            continue
+        if (producto.id, ingrediente.id) in existentes_pares:
+            continue
+
+        unidad = unidades_por_simbolo.get(data["unidad"])
+
+        session.add(
+            ProductoIngrediente(
+                producto_id=producto.id,
+                ingrediente_id=ingrediente.id,
+                cantidad=data["cantidad"],
+                unidad_medida_id=unidad.id if unidad else None,
+                es_removible=data["es_removible"],
             )
         )
         creados = True

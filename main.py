@@ -11,6 +11,8 @@ from app.core.seed import (
     seed_categorias,
     seed_estados_pedido,
     seed_formas_pago,
+    seed_ingredientes,
+    seed_producto_ingredientes,
     seed_productos,
     seed_roles,
     seed_unidades_medida,
@@ -49,6 +51,8 @@ async def lifespan(app: FastAPI):
         seed_unidades_medida(session)
         seed_categorias(session)
         seed_productos(session)
+        seed_ingredientes(session)
+        seed_producto_ingredientes(session)
     yield
     # Shutdown: nada por ahora
 
