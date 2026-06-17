@@ -6,7 +6,7 @@ from fastapi import HTTPException, status
 from app.core.config import settings
 from app.core.security import hash_password, verify_password, create_access_token, create_refresh_token_pair, hash_token
 from app.modules.usuarios.model import Usuario
-from app.modules.usuarios.schema import UserCreate, Token, UserPublic
+from app.modules.usuarios.schema import AdminUserCreate, UserCreate, Token, UserPublic
 from app.modules.usuarios.unit_of_work import UsuarioUnitOfWork
 from app.modules.rol.model import UsuarioRol
 from app.modules.rol.enums import RolEnum
@@ -19,29 +19,40 @@ class UsuarioService:
         self.uow = uow
         self.rol_uow = rol_uow
 
-    def register(self, user_in: UserCreate) -> UserPublic:
-        if not self.rol_uow:
-            raise RuntimeError("RolUnitOfWork requerido para registro con asignación de rol")
+    # ── shared private helpers ────────────────────────────────────────────────
 
-        if self.uow.usuarios.get_by_username(user_in.username):
+    def _check_unique(self, username: str, email: str) -> None:
+        """Raise 409 if username or email is already taken."""
+        if self.uow.usuarios.get_by_username(username):
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail="El nombre de usuario ya está en uso",
             )
-
-        if self.uow.usuarios.get_by_email(user_in.email):
+        if self.uow.usuarios.get_by_email(email):
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail="El email ya está registrado",
             )
 
-        usuario = Usuario(
-            username=user_in.username,
-            full_name=user_in.full_name,
-            email=user_in.email,
-            hashed_password=hash_password(user_in.password),
+    def _build_usuario(self, username: str, full_name: str, email: str, password: str) -> Usuario:
+        return Usuario(
+            username=username,
+            full_name=full_name,
+            email=email,
+            hashed_password=hash_password(password),
         )
 
+    # ── public methods ────────────────────────────────────────────────────────
+
+    def register(self, user_in: UserCreate) -> UserPublic:
+        if not self.rol_uow:
+            raise RuntimeError("RolUnitOfWork requerido para registro con asignación de rol")
+
+        self._check_unique(user_in.username, user_in.email)
+
+        usuario = self._build_usuario(
+            user_in.username, user_in.full_name, user_in.email, user_in.password
+        )
         nuevo = self.uow.usuarios.add(usuario)
 
         rol_cliente = self.rol_uow.roles.get_by_codigo(RolEnum.CLIENT)
@@ -49,6 +60,30 @@ class UsuarioService:
             self.rol_uow.usuarios_roles.add(UsuarioRol(usuario_id=nuevo.id, rol_id=rol_cliente.id))
             self.uow.usuarios.session.refresh(nuevo)
 
+        return UserPublic.model_validate(nuevo)
+
+    def admin_create_user(self, user_in: AdminUserCreate) -> UserPublic:
+        """Create a user with an explicit list of roles (admin-only operation)."""
+        if not self.rol_uow:
+            raise RuntimeError("RolUnitOfWork requerido para admin_create_user")
+
+        self._check_unique(user_in.username, user_in.email)
+
+        usuario = self._build_usuario(
+            user_in.username, user_in.full_name, user_in.email, user_in.password
+        )
+        nuevo = self.uow.usuarios.add(usuario)
+
+        for rol_codigo in user_in.roles:
+            rol = self.rol_uow.roles.get_by_codigo(rol_codigo)
+            if not rol:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Rol no encontrado: {rol_codigo}",
+                )
+            self.rol_uow.usuarios_roles.add(UsuarioRol(usuario_id=nuevo.id, rol_id=rol.id))
+
+        self.uow.usuarios.session.refresh(nuevo)
         return UserPublic.model_validate(nuevo)
 
     def authenticate(self, username: str, password: str) -> tuple[Token, str]:

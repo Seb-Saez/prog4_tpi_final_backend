@@ -23,7 +23,7 @@ from app.core.deps import get_current_active_user, require_role
 from app.core.security import hash_token, create_access_token, create_refresh_token_pair
 from app.modules.usuarios.unit_of_work import UsuarioUnitOfWork, get_uow
 from app.modules.rol.enums import RolEnum
-from app.modules.usuarios.schema import UserCreate, UserPublic
+from app.modules.usuarios.schema import AdminUserCreate, UserCreate, UserPublic
 from app.modules.rol.unit_of_work import RolUnitOfWork, get_uow as get_rol_uow
 from app.modules.usuarios.service import UsuarioService
 from app.modules.refresh_token.model import RefreshToken
@@ -217,6 +217,22 @@ def ruta_privada(
 
 
 # ─── Rutas de administración (RBAC) ──────────────────────────────────────────
+
+
+@admin.post(
+    "/admin/usuarios",
+    response_model=UserPublic,
+    status_code=status.HTTP_201_CREATED,
+)
+def admin_create_user(
+    user_in: AdminUserCreate,
+    _admin: Annotated[UserPublic, Depends(require_role([RolEnum.ADMIN]))],
+    uow: Annotated[UsuarioUnitOfWork, Depends(get_uow)],
+    rol_uow: Annotated[RolUnitOfWork, Depends(get_rol_uow)],
+):
+    with uow, rol_uow:
+        service = UsuarioService(uow, rol_uow)
+        return service.admin_create_user(user_in)
 
 
 @admin.get("/admin/usuarios", response_model=list[UserPublic])

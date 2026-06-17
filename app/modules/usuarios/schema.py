@@ -1,6 +1,6 @@
 from typing import Any, Optional
 
-from pydantic import EmailStr, model_validator
+from pydantic import EmailStr, field_validator, model_validator
 from sqlmodel import SQLModel, Field
 
 
@@ -11,6 +11,20 @@ class UserCreate(SQLModel):
     email:     EmailStr
     password:  str = Field(min_length=8)
     celular:   Optional[str] = None
+
+
+class AdminUserCreate(SQLModel):
+    """Datos para crear un usuario desde el panel de administración."""
+    username:  str
+    full_name: str
+    email:     EmailStr
+    password:  str = Field(min_length=8)
+    roles:     list[str] = Field(default_factory=lambda: ["CLIENT"])
+
+    @field_validator("roles")
+    @classmethod
+    def default_client_if_empty(cls, v: list[str]) -> list[str]:
+        return v if v else ["CLIENT"]
 
 
 class UserUpdate(SQLModel):
