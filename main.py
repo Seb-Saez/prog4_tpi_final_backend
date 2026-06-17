@@ -37,6 +37,15 @@ from app.modules.cloudinary.router import router_cloudinary
 from app.modules.pago.router import router_pago
 from app.modules.estadisticas.router import router_estadisticas
 from app.core.config import settings
+from app.core.logging_config import setup_logging
+from app.core.middleware import RequestLoggingMiddleware
+from app.core.exceptions import register_exception_handlers
+
+# ─── Logging ──────────────────────────────────────────────────────────────────
+# Se configura antes de crear la app para que cualquier log de arranque
+# (lifespan, seeds) ya salga con el formato unificado.
+setup_logging()
+
 
 # ─── Ciclo de vida ────────────────────────────────────────────────────────────
 @asynccontextmanager
@@ -58,6 +67,14 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(lifespan=lifespan)
+
+
+# ─── Exception handlers globales ──────────────────────────────────────────────
+register_exception_handlers(app)
+
+
+# ─── Logging de peticiones (logs + timing por consola) ────────────────────────
+app.add_middleware(RequestLoggingMiddleware)
 
 
 # ─── CORS ─────────────────────────────────────────────────────────────────────

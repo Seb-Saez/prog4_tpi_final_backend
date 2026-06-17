@@ -383,3 +383,59 @@ class TestAjustarStock:
         session.refresh(producto)
         assert producto.disponible is True
         assert producto.deshabilitado_por_stock is False
+
+    def test_ajustar_stock_cocina(self, client: TestClient, session: Session):
+        """COCINA puede ajustar el stock de un ingrediente."""
+        from sqlmodel import select
+        from app.modules.usuarios.model import Usuario
+        from app.modules.rol.model import Rol, UsuarioRol
+        from app.modules.rol.enums import RolEnum
+        from app.core.security import create_access_token
+
+        # Register a new user and assign COCINA role
+        resp = client.post("/api/v1/auth/register", json={
+            "username": "cocina_user",
+            "email": "cocina@mail.com",
+            "password": "Cocina1234!",
+            "full_name": "Cocina User",
+        })
+        assert resp.status_code == 201, resp.text
+        uid = resp.json()["id"]
+
+        # Assign COCINA role via admin
+        admin_user = session.exec(select(Usuario).where(Usuario.username == "admin")).first()
+        admin_roles = session.exec(
+            select(Rol.codigo)
+            .join(UsuarioRol, UsuarioRol.rol_id == Rol.id)
+            .where(UsuarioRol.usuario_id == admin_user.id)
+        ).all()
+        admin_token = create_access_token(
+            {"sub": admin_user.username, "roles": list(admin_roles)},
+            token_version=admin_user.token_version,
+        )
+        client.cookies.clear()
+        client.cookies.set("access_token", admin_token)
+        resp = client.post(f"/api/v1/admin/usuarios/{uid}/roles", json={"rol_codigo": "COCINA"})
+        assert resp.status_code == 200, resp.text
+
+        # Build COCINA token
+        cocina_user = session.exec(select(Usuario).where(Usuario.username == "cocina_user")).first()
+        cocina_roles = session.exec(
+            select(Rol.codigo)
+            .join(UsuarioRol, UsuarioRol.rol_id == Rol.id)
+            .where(UsuarioRol.usuario_id == cocina_user.id)
+        ).all()
+        cocina_token = create_access_token(
+            {"sub": cocina_user.username, "roles": list(cocina_roles)},
+            token_version=cocina_user.token_version,
+        )
+        client.cookies.clear()
+        client.cookies.set("access_token", cocina_token)
+
+        _, ing = self._setup_producto_con_ingrediente(session, ingrediente_nombre="Carne-Cocina")
+        resp = client.patch(
+            f"{self.ENDPOINT}/{ing.id}/stock",
+            json={"stock_cantidad": 3},
+        )
+        assert resp.status_code == 200
+        assert resp.json()["stock_cantidad"] == 3

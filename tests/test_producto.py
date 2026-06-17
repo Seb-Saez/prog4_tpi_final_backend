@@ -1,5 +1,10 @@
 import pytest
 from fastapi.testclient import TestClient
+from sqlmodel import Session
+
+from app.modules.producto.model import Producto
+from app.modules.ingrediente.model import Ingrediente
+from app.modules.producto_ingrediente.model import ProductoIngrediente
 
 
 def _as(client, token):
@@ -133,3 +138,82 @@ class TestProductoCRUD:
     def test_delete_producto_not_found(self, client: TestClient, admin_headers):
         resp = client.delete(f"{self.ENDPOINT}/99999")
         assert resp.status_code == 404
+
+
+class TestProductoIngredientes:
+    """Tests for GET /productos/{id}/ingredientes — enriched response."""
+
+    ENDPOINT = "/api/v1/productos"
+
+    def _seed_producto_con_ingrediente(
+        self,
+        session: Session,
+        nombre_ingrediente: str = "Queso",
+        stock_inicial: int = 8,
+        es_removible: bool = False,
+    ) -> tuple[Producto, Ingrediente]:
+        producto = Producto(
+            nombre=f"Prod-{nombre_ingrediente}",
+            descripcion="Producto de prueba",
+            precio_base=150,
+            stock_cantidad=5,
+            disponible=True,
+        )
+        session.add(producto)
+        session.flush()
+
+        ingrediente = Ingrediente(
+            nombre=nombre_ingrediente,
+            descripcion=nombre_ingrediente,
+            es_alergeno=False,
+            stock_cantidad=stock_inicial,
+        )
+        session.add(ingrediente)
+        session.flush()
+
+        session.add(ProductoIngrediente(
+            producto_id=producto.id,
+            ingrediente_id=ingrediente.id,
+            cantidad=50,
+            es_removible=es_removible,
+        ))
+        session.commit()
+        session.refresh(producto)
+        session.refresh(ingrediente)
+        return producto, ingrediente
+
+    def test_get_ingredientes_returns_nombre_and_stock(
+        self, client: TestClient, admin_headers, session: Session
+    ):
+        """GET /productos/{id}/ingredientes includes nombre and stock_cantidad."""
+        producto, ingrediente = self._seed_producto_con_ingrediente(
+            session, nombre_ingrediente="Mozzarella", stock_inicial=12
+        )
+        resp = client.get(f"{self.ENDPOINT}/{producto.id}/ingredientes")
+        assert resp.status_code == 200, resp.text
+        data = resp.json()
+        assert len(data) == 1
+        item = data[0]
+        assert item["ingrediente_id"] == ingrediente.id
+        assert item["nombre"] == "Mozzarella"
+        assert item["stock_cantidad"] == 12
+
+    def test_get_ingredientes_not_found(self, client: TestClient, admin_headers):
+        """Returns 404 when the product does not exist."""
+        resp = client.get(f"{self.ENDPOINT}/99999/ingredientes")
+        assert resp.status_code == 404
+
+    def test_get_ingredientes_empty(self, client: TestClient, admin_headers):
+        """Returns an empty list when the product has no ingredients."""
+        resp = client.post(self.ENDPOINT, json={
+            "nombre": "Sin ingredientes",
+            "descripcion": "Sin ingredientes",
+            "precio_base": 50.0,
+            "stock_cantidad": 5,
+            "disponible": True,
+        })
+        assert resp.status_code == 201, resp.text
+        prod_id = resp.json()["id"]
+        resp = client.get(f"{self.ENDPOINT}/{prod_id}/ingredientes")
+        assert resp.status_code == 200
+        assert resp.json() == []

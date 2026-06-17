@@ -15,6 +15,8 @@ class ProductoIngredienteOut(SQLModel):
     cantidad: float | None = None
     unidad_medida_id: int | None = None
     es_removible: bool = False
+    nombre: str
+    stock_cantidad: int
 
 
 class ProductoBase(SQLModel):

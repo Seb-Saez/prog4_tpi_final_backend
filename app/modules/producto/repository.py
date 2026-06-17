@@ -21,6 +21,9 @@ class ProductoRepository(BaseRepository[Producto]):
         stmt = (
             select(Producto)
             .where(col(Producto.id) == id)
-            .options(selectinload(Producto.producto_ingredientes)) # type: ignore[arg-type]
+            .options(
+                selectinload(Producto.producto_ingredientes)  # type: ignore[arg-type]
+                .selectinload(ProductoIngrediente.ingrediente)  # type: ignore[arg-type]
+            )
         )
         return self.session.exec(stmt).first()

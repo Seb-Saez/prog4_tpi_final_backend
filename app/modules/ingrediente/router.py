@@ -79,7 +79,7 @@ def update(
 @router_ingrediente.patch(
     "/{ingrediente_id}/stock",
     response_model=IngredienteResponse,
-    dependencies=[Depends(require_role([RolEnum.ADMIN, RolEnum.CAJA]))],
+    dependencies=[Depends(require_role([RolEnum.ADMIN, RolEnum.CAJA, RolEnum.COCINA]))],
 )
 def ajustar_stock(
     ingrediente_id: Annotated[int, Path(ge=1, description="ID del ingrediente")],

@@ -148,10 +148,20 @@ class ProductoService:
             uow.productos.add(producto)
             return producto
 
-    def get_ingredientes(self, producto_id: int) -> List[ProductoIngrediente]:
+    def get_ingredientes(self, producto_id: int) -> List[ProductoIngredienteOut]:
         with ProductoUnitOfWork(self._session) as uow:
             producto = self._get_or_404(uow, producto_id)
-            return list(producto.producto_ingredientes)
+            return [
+                ProductoIngredienteOut(
+                    ingrediente_id=pi.ingrediente_id,
+                    cantidad=pi.cantidad,
+                    unidad_medida_id=pi.unidad_medida_id,
+                    es_removible=pi.es_removible,
+                    nombre=pi.ingrediente.nombre,
+                    stock_cantidad=pi.ingrediente.stock_cantidad,
+                )
+                for pi in producto.producto_ingredientes
+            ]
 
     def add_ingrediente(
         self, producto_id: int, data: ProductoIngredienteInput
@@ -237,7 +247,7 @@ def set_imagenes_producto(
 
 def get_ingredientes_producto(
     session: Session, producto_id: int
-) -> list[ProductoIngrediente]:
+) -> list[ProductoIngredienteOut]:
     service = ProductoService(session)
     return service.get_ingredientes(producto_id)
 
