@@ -1,11 +1,11 @@
 from typing import Optional
-from sqlmodel import SQLModel
+from sqlmodel import Field, SQLModel
 
 
 class UnidadMedidaBase(SQLModel):
-    nombre: str
-    simbolo: str
-    tipo: str
+    nombre: str = Field(max_length=50)
+    simbolo: str = Field(max_length=10)
+    tipo: str = Field(max_length=20)
 
 
 class UnidadMedidaCreate(UnidadMedidaBase):
@@ -17,6 +17,6 @@ class UnidadMedidaResponse(UnidadMedidaBase):
 
 
 class UnidadMedidaUpdate(SQLModel):
-    nombre: Optional[str] = None
-    simbolo: Optional[str] = None
-    tipo: Optional[str] = None
+    nombre: Optional[str] = Field(default=None, max_length=50)
+    simbolo: Optional[str] = Field(default=None, max_length=10)
+    tipo: Optional[str] = Field(default=None, max_length=20)

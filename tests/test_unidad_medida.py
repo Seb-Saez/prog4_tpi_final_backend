@@ -57,6 +57,24 @@ class TestUnidadMedidaCRUD:
         })
         assert resp.status_code == 404
 
+    def test_update_unidad_simbolo_too_long_returns_422(self, client: TestClient, session):
+        # Las columnas son VARCHAR(50/10/20). Un valor más largo debe rechazarse
+        # en el borde (422), no llegar a la DB y reventar con un 500.
+        created = client.post(self.ENDPOINT, json={
+            "nombre": "Mililitro", "simbolo": "ml", "tipo": "VOLUMEN",
+        })
+        uid = created.json()["id"]
+        resp = client.patch(f"{self.ENDPOINT}/{uid}", json={
+            "simbolo": "A" * 15,  # excede max_length=10
+        })
+        assert resp.status_code == 422
+
+    def test_create_unidad_simbolo_too_long_returns_422(self, client: TestClient, session):
+        resp = client.post(self.ENDPOINT, json={
+            "nombre": "Kilogramo", "simbolo": "A" * 15, "tipo": "MASA",
+        })
+        assert resp.status_code == 422
+
     def test_delete_unidad(self, client: TestClient, session):
         created = client.post(self.ENDPOINT, json={
             "nombre": "ToDelete", "simbolo": "x", "tipo": "OTRO",
