@@ -4,11 +4,12 @@ from typing import Annotated
 from fastapi import APIRouter, Cookie, WebSocket, WebSocketDisconnect, status
 from sqlmodel import Session, select
 
-from app.core.database import engine
+from app.core import database as _db
 from app.core.security import decode_access_token
 from app.core.websocket import manager
 from app.modules.pedido.model import Pedido
 from app.modules.usuarios.model import Usuario
+import asyncio
 
 logger = logging.getLogger("app.modules.ws")
 
@@ -49,7 +50,7 @@ async def ws_pedidos(
     rol = _determinar_rol(roles)
     is_staff = _es_staff(rol)
 
-    with Session(engine) as session:
+    with Session(_db.engine) as session:
         user = session.exec(
             select(Usuario).where(Usuario.username == username)
         ).first()
@@ -63,9 +64,17 @@ async def ws_pedidos(
 
     try:
         while True:
-            data = await websocket.receive_json()
+            try:
+                data = await asyncio.wait_for(websocket.receive_json(), timeout=30.0)
+            except asyncio.TimeoutError:
+                await websocket.send_json({"event": "PING"})
+                continue
+
             action = data.get("action")
 
+            # NOTE: heartbeat implementado — cada 30s sin mensajes del cliente
+            # se envía un PING para mantener la conexión viva y evitar que
+            # navegadores/proxies cierren el socket por inactividad.
             if action == "subscribe-order":
                 order_id = data.get("order_id")
                 if not isinstance(order_id, int):
@@ -76,7 +85,7 @@ async def ws_pedidos(
                     continue
 
                 if not is_staff:
-                    with Session(engine) as session:
+                    with Session(_db.engine) as session:
                         pedido = session.exec(
                             select(Pedido).where(Pedido.id == order_id)
                         ).first()
@@ -129,7 +138,7 @@ async def ws_cocina(
         await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
         return
 
-    with Session(engine) as session:
+    with Session(_db.engine) as session:
         user = session.exec(
             select(Usuario).where(Usuario.username == username)
         ).first()
@@ -142,7 +151,14 @@ async def ws_cocina(
 
     try:
         while True:
-            await websocket.receive_text()
+            # NOTE: heartbeat implementado — cada 30s sin mensajes del cliente
+            # se envía un PING para mantener la conexión viva y evitar que
+            # navegadores/proxies cierren el socket por inactividad.
+            try:
+                await asyncio.wait_for(websocket.receive_text(), timeout=30.0)
+            except asyncio.TimeoutError:
+                await websocket.send_json({"event": "PING"})
+                continue
     except WebSocketDisconnect:
         pass
     except Exception as e:

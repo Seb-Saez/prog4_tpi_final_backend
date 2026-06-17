@@ -2,7 +2,7 @@
 Módulo de Roles del sistema.
 
 Entidades:
-- Rol: catálogo de roles (ADMIN, CLIENTE, COCINA, CAJA)
+- Rol: catálogo de roles (ADMIN, CLIENT, COCINA, CAJA)
 - UsuarioRol: tabla intermedia many-to-many entre Usuario y Rol
 
 Responsabilidad:

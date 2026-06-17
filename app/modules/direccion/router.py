@@ -5,7 +5,7 @@ from app.core.database import get_session
 from app.core.deps import get_current_active_user
 from app.modules.usuarios.schema import UserPublic
 from app.modules.direccion.schema import DireccionCreate, DireccionResponse, DireccionUpdate
-from app.modules.direccion.service import create_direccion, list_direcciones, get_direccion, update_direccion, delete_direccion
+from app.modules.direccion.service import create_direccion, list_direcciones, get_direccion, update_direccion, delete_direccion, set_principal_direccion
 
 
 router_direccion = APIRouter(prefix="/api/v1/direcciones", tags=["direcciones"])
@@ -56,3 +56,12 @@ def delete(
     session: Session = Depends(get_session),
 ):
     return delete_direccion(session, direccion_id, current_user.id)
+
+
+@router_direccion.patch("/{direccion_id}/principal", response_model=DireccionResponse)
+def set_principal(
+    direccion_id: Annotated[int, Path(ge=1)],
+    current_user: Annotated[UserPublic, Depends(get_current_active_user)],
+    session: Session = Depends(get_session),
+):
+    return set_principal_direccion(session, direccion_id, current_user.id)

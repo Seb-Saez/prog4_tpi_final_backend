@@ -9,10 +9,12 @@ from app.modules.direccion.model import DireccionEntrega
 from app.modules.estado_pedido.model import EstadoPedido
 from app.modules.forma_pago.model import FormaPago
 from app.modules.historial_pedido.model import HistorialEstadoPedido
+from app.modules.ingrediente.utils import obtener_ingredientes_faltantes_del_producto
 from app.modules.pedido.enums import ModalidadEntrega
 from app.modules.pedido.model import Pedido
 from app.modules.pedido.schema import PedidoCreate
 from app.modules.pedido.unit_of_work import PedidoUnitOfWork
+from app.modules.pedido.utils import validar_rol_para_transicion
 from app.modules.rol.enums import RolEnum
 from app.modules.usuarios.schema import UserPublic
 
@@ -83,7 +85,125 @@ class PedidoService:
             assert pedido_completo is not None
             return pedido_completo
 
-    def avanzar_estado(self, pedido_id: int, usuario: UserPublic) -> Pedido:
+    def avanzar_estado(
+        self,
+        pedido_id: int,
+        usuario: UserPublic,
+        nuevo_estado: str | None = None,
+        motivo: str | None = None,
+    ) -> Pedido:
+        # ── Fase 1: validaciones de solo lectura (fuera del UoW de escritura) ──
+        # Las validaciones que pueden lanzar HTTPException se ejecutan ANTES de
+        # abrir el UoW de escritura para evitar que el rollback del UoW deje la
+        # sesión compartida en un estado inconsistente para pruebas con SQLite.
+        pedido, estado_actual, estado_siguiente = self._resolver_transicion(
+            pedido_id, nuevo_estado
+        )
+
+        # B4 — Validar permiso fino por transición
+        if not validar_rol_para_transicion(
+            estado_actual.codigo,
+            estado_siguiente.codigo,
+            list(usuario.roles),
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=(
+                    f"Tu rol no tiene permiso para la transición "
+                    f"'{estado_actual.codigo}' → '{estado_siguiente.codigo}'"
+                ),
+            )
+
+        # B5 — Bloqueo por ingrediente faltante en la transición
+        # EN_PREPARACION → LISTO_PARA_RETIRAR | ENVIADO
+        if (
+            estado_actual.codigo == "EN_PREPARACION"
+            and estado_siguiente.codigo in {"LISTO_PARA_RETIRAR", "ENVIADO"}
+        ):
+            self._verificar_ingredientes_directo(pedido)
+
+        # ── Fase 2: escritura en UoW ──
+        with PedidoUnitOfWork(self._session) as uow:
+            # Re-fetch en el contexto del UoW para evitar objetos stale.
+            pedido_write = self._get_or_404(uow, pedido_id)
+            pedido_write.estado_pedido_codigo = estado_siguiente.codigo
+            uow.pedidos.update(pedido_write)
+
+            uow.historiales.add(
+                HistorialEstadoPedido(
+                    usuario_id=usuario.id,
+                    pedido_id=pedido_write.id,
+                    estado_anterior=estado_actual.codigo,
+                    estado_nuevo=estado_siguiente.codigo,
+                    motivo=motivo,
+                )
+            )
+
+            pedido_completo = uow.pedidos.get_full(pedido_write.id)
+            assert pedido_completo is not None
+            return pedido_completo
+
+    def _resolver_transicion(
+        self,
+        pedido_id: int,
+        nuevo_estado: str | None,
+    ) -> tuple:
+        """
+        Obtiene el pedido y calcula el estado siguiente según la modalidad.
+        No escribe en la BD — usa los repositorios directamente (sin UoW) para
+        que cualquier HTTPException que lance no provoque un rollback de sesión.
+        """
+        from app.modules.pedido.repository import PedidoRepository
+        from app.modules.estado_pedido.repository import EstadoPedidoRepository
+
+        pedido_repo = PedidoRepository(self._session)
+        estados_repo = EstadoPedidoRepository(self._session)
+
+        pedido = pedido_repo.get_full(pedido_id)
+        if pedido is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Pedido no encontrado",
+            )
+
+        estado_actual = pedido.estado_pedido
+        if estado_actual.es_terminal:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="El pedido ya está en un estado terminal",
+            )
+
+        excluidos = ESTADOS_A_SALTAR_POR_MODALIDAD.get(pedido.modalidad_entrega, [])
+        estado_siguiente = estados_repo.get_siguiente(
+            estado_actual.orden, codigos_excluidos=excluidos
+        )
+        if estado_siguiente is None:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="No hay estado siguiente configurado para esta modalidad",
+            )
+
+        if nuevo_estado is not None and nuevo_estado != estado_siguiente.codigo:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=(
+                    f"El estado solicitado '{nuevo_estado}' no coincide con "
+                    f"el siguiente estado esperado '{estado_siguiente.codigo}'"
+                ),
+            )
+
+        return pedido, estado_actual, estado_siguiente
+
+    def avanzar_estado_sistema(
+        self,
+        pedido_id: int,
+        motivo: str | None = None,
+    ) -> Pedido:
+        """Avanza el estado usando el usuario_id del propio pedido como actor.
+
+        Diseñado para disparadores del sistema (webhooks, crons) donde no hay
+        un usuario autenticado. Reutiliza la lógica de avanzar_estado.
+        """
         with PedidoUnitOfWork(self._session) as uow:
             pedido = self._get_or_404(uow, pedido_id)
             estado_actual = pedido.estado_pedido
@@ -111,10 +231,11 @@ class PedidoService:
 
             uow.historiales.add(
                 HistorialEstadoPedido(
-                    usuario_id=usuario.id,
+                    usuario_id=pedido.usuario_id,
                     pedido_id=pedido.id,
                     estado_anterior=estado_actual.codigo,
                     estado_nuevo=estado_siguiente.codigo,
+                    motivo=motivo,
                 )
             )
 
@@ -122,7 +243,14 @@ class PedidoService:
             assert pedido_completo is not None
             return pedido_completo
 
-    def cancelar(self, pedido_id: int, usuario: UserPublic) -> Pedido:
+    def cancelar(self, pedido_id: int, usuario: UserPublic, motivo: str) -> Pedido:
+        # RN-05: el motivo es obligatorio al cancelar.
+        if not motivo or not motivo.strip():
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="El motivo es obligatorio para cancelar un pedido (RN-05)",
+            )
+
         with PedidoUnitOfWork(self._session) as uow:
             pedido = self._get_or_404(uow, pedido_id)
             self._asegurar_acceso(pedido, usuario)
@@ -150,12 +278,22 @@ class PedidoService:
                     pedido_id=pedido.id,
                     estado_anterior=estado_actual.codigo,
                     estado_nuevo=estado_cancelado.codigo,
+                    motivo=motivo.strip(),
                 )
             )
 
             pedido_completo = uow.pedidos.get_full(pedido.id)
             assert pedido_completo is not None
             return pedido_completo
+
+    def list_historial(
+        self, pedido_id: int, usuario: UserPublic
+    ) -> Sequence[HistorialEstadoPedido]:
+        """Historial de transiciones de un pedido, ASC por fecha. Valida acceso."""
+        with PedidoUnitOfWork(self._session) as uow:
+            pedido = self._get_or_404(uow, pedido_id)
+            self._asegurar_acceso(pedido, usuario)
+            return uow.historiales.list_by_pedido(pedido_id)
 
     def get_pedido(self, pedido_id: int, usuario: UserPublic) -> Pedido:
         with PedidoUnitOfWork(self._session) as uow:
@@ -195,7 +333,7 @@ class PedidoService:
     def _asegurar_acceso(self, pedido: Pedido, usuario: UserPublic) -> None:
         if pedido.usuario_id == usuario.id:
             return
-        allowed_roles = {RolEnum.ADMIN, RolEnum.COCINA}
+        allowed_roles = {RolEnum.ADMIN, RolEnum.COCINA, RolEnum.CAJA}
         if set(usuario.roles) & allowed_roles:
             return
         raise HTTPException(
@@ -308,6 +446,51 @@ class PedidoService:
             subtotal += subtotal_linea
 
         return detalles, subtotal
+
+    def _verificar_ingredientes_directo(self, pedido: Pedido) -> None:
+        """B5: rechaza con 409 si algún producto del pedido tiene ingredientes
+        no-removibles con stock_cantidad == 0, siempre que su categoría tenga
+        requiere_ingredientes=True.
+
+        Usa self._session directamente (sin UoW) para no causar rollback en caso
+        de error — la validación es de solo lectura.
+
+        Reutiliza `obtener_ingredientes_faltantes_del_producto` del módulo ingrediente.
+        """
+        from app.modules.categoria.model import Categoria
+        from app.modules.producto_categoria.model import ProductoCategoria
+        from sqlmodel import select
+
+        faltantes_nombres: list[str] = []
+
+        for detalle in pedido.detalles:
+            # Solo verificar productos cuya categoría requiere ingredientes
+            stmt_cat = (
+                select(Categoria)
+                .join(ProductoCategoria, ProductoCategoria.categoria_id == Categoria.id)
+                .where(ProductoCategoria.producto_id == detalle.producto_id)
+                .where(Categoria.requiere_ingredientes == True)  # noqa: E712
+            )
+            tiene_categoria_con_requiere = self._session.exec(stmt_cat).first() is not None
+            if not tiene_categoria_con_requiere:
+                continue
+
+            ingredientes_faltantes = obtener_ingredientes_faltantes_del_producto(
+                self._session, detalle.producto_id
+            )
+            for ing in ingredientes_faltantes:
+                if ing.nombre not in faltantes_nombres:
+                    faltantes_nombres.append(ing.nombre)
+
+        if faltantes_nombres:
+            nombres_str = ", ".join(faltantes_nombres)
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=(
+                    f"No se puede avanzar el pedido: falta stock de los siguientes "
+                    f"ingredientes: {nombres_str}"
+                ),
+            )
 
     def _snapshot_direccion(self, direccion: DireccionEntrega) -> str:
         partes = [direccion.linea1]

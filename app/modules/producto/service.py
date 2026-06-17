@@ -1,9 +1,17 @@
-from typing import Optional
+from typing import List, Optional
 from fastapi import HTTPException
 from sqlmodel import Session, col, select
 
 from app.modules.producto.model import Producto
-from app.modules.producto.schema import ProductoCreate, ProductoUpdate, ProductoResponse
+from app.modules.producto.schema import (
+    DisponibilidadUpdate,
+    ImagenesUpdate,
+    ProductoCreate,
+    ProductoIngredienteInput,
+    ProductoIngredienteOut,
+    ProductoUpdate,
+    ProductoResponse,
+)
 from app.modules.producto.unit_of_work import ProductoUnitOfWork
 from app.modules.categoria.model import Categoria
 from app.modules.producto_ingrediente.model import ProductoIngrediente
@@ -45,12 +53,15 @@ class ProductoService:
 
     def create(self, data: ProductoCreate) -> Producto:
         with ProductoUnitOfWork(self._session) as uow:
+            if data.imagenes_url is None:
+                data.imagenes_url = []
             producto = Producto.model_validate(data)
 
+            # Sin stock al crear: se apaga y se deja registro de que fue por stock.
+            # Con stock: se respeta el `disponible` que mandó el admin.
             if producto.stock_cantidad == 0:
                 producto.disponible = False
-            elif producto.stock_cantidad > 0:
-                producto.disponible = True
+                producto.deshabilitado_por_stock = True
 
             if hasattr(data, "categorias_ids") and data.categorias_ids:
                 categorias = list(
@@ -99,13 +110,12 @@ class ProductoService:
                 )
 
             if "categorias_ids" in data.model_fields_set and data.categorias_ids is not None:
-                if "categorias_ids" is not None:
-                    categorias = list(
+                categorias = list(
                         uow.session.exec(
                             select(Categoria).where(col(Categoria.id).in_(data.categorias_ids))
                         ).all()
                     )
-                    producto.categorias = categorias
+                producto.categorias = categorias
 
             if "ingredientes_ids" in data.model_fields_set and data.ingredientes is not None:
                 self._sync_ingredientes(uow, producto, data.ingredientes)
@@ -113,15 +123,85 @@ class ProductoService:
             for field, value in update_data.items():
                 setattr(producto, field, value)
 
+            # Auto-disponibilidad por stock, RESPETANDO la decisión manual del admin:
+            # - Sin stock: se apaga y se marca que el motivo fue el stock (solo si
+            #   estaba disponible; si ya estaba apagado a mano, no se toca el flag).
+            # - Con stock: se reactiva SOLO si había sido apagado por stock. Nunca
+            #   pisa un apagado manual del admin (deshabilitado_por_stock = False).
             if producto.stock_cantidad == 0:
-                producto.disponible = False
-            elif producto.stock_cantidad > 0:
+                if producto.disponible:
+                    producto.disponible = False
+                    producto.deshabilitado_por_stock = True
+            elif producto.deshabilitado_por_stock:
                 producto.disponible = True
+                producto.deshabilitado_por_stock = False
 
             producto.updated_at = utcnow()
 
             uow.productos.add(producto)
             return producto
+
+    def set_disponibilidad(self, producto_id: int, disponible: bool) -> Producto:
+        with ProductoUnitOfWork(self._session) as uow:
+            producto = self._get_or_404(uow, producto_id)
+            producto.disponible = disponible
+            producto.updated_at = utcnow()
+            uow.productos.add(producto)
+            return producto
+
+    def set_imagenes(self, producto_id: int, imagenes_url: Optional[List[str]]) -> Producto:
+        with ProductoUnitOfWork(self._session) as uow:
+            producto = self._get_or_404(uow, producto_id)
+            producto.imagenes_url = imagenes_url or []
+            producto.updated_at = utcnow()
+            uow.productos.add(producto)
+            return producto
+
+    def get_ingredientes(self, producto_id: int) -> List[ProductoIngredienteOut]:
+        with ProductoUnitOfWork(self._session) as uow:
+            producto = self._get_or_404(uow, producto_id)
+            return [
+                ProductoIngredienteOut(
+                    ingrediente_id=pi.ingrediente_id,
+                    cantidad=pi.cantidad,
+                    unidad_medida_id=pi.unidad_medida_id,
+                    es_removible=pi.es_removible,
+                    nombre=pi.ingrediente.nombre,
+                    stock_cantidad=pi.ingrediente.stock_cantidad,
+                )
+                for pi in producto.producto_ingredientes
+            ]
+
+    def add_ingrediente(
+        self, producto_id: int, data: ProductoIngredienteInput
+    ) -> List[ProductoIngrediente]:
+        with ProductoUnitOfWork(self._session) as uow:
+            producto = self._get_or_404(uow, producto_id)
+
+            # Verifica si el vínculo ya existe
+            existe = any(
+                pi.ingrediente_id == data.ingrediente_id
+                for pi in producto.producto_ingredientes
+            )
+            if existe:
+                raise HTTPException(
+                    status_code=409,
+                    detail="El ingrediente ya está asociado al producto",
+                )
+
+            pi = ProductoIngrediente(
+                producto_id=producto_id,
+                ingrediente_id=data.ingrediente_id,
+                cantidad=data.cantidad,
+                unidad_medida_id=data.unidad_medida_id,
+                es_removible=data.es_removible,
+            )
+            uow.session.add(pi)
+            uow.session.flush()
+
+            # Recarga para devolver la lista actualizada
+            producto_actualizado = self._get_or_404(uow, producto_id)
+            return list(producto_actualizado.producto_ingredientes)
 
     def delete(self, producto_id: int) -> bool:
         with ProductoUnitOfWork(self._session) as uow:
@@ -158,3 +238,31 @@ def update_producto(session: Session, producto_id: int, data: ProductoUpdate) ->
 def delete_producto(session: Session, producto_id: int) -> bool:
     service = ProductoService(session)
     return service.delete(producto_id)
+
+
+def set_disponibilidad_producto(
+    session: Session, producto_id: int, disponible: bool
+) -> Producto:
+    service = ProductoService(session)
+    return service.set_disponibilidad(producto_id, disponible)
+
+
+def set_imagenes_producto(
+    session: Session, producto_id: int, imagenes_url: Optional[List[str]]
+) -> Producto:
+    service = ProductoService(session)
+    return service.set_imagenes(producto_id, imagenes_url)
+
+
+def get_ingredientes_producto(
+    session: Session, producto_id: int
+) -> list[ProductoIngredienteOut]:
+    service = ProductoService(session)
+    return service.get_ingredientes(producto_id)
+
+
+def add_ingrediente_producto(
+    session: Session, producto_id: int, data: ProductoIngredienteInput
+) -> list[ProductoIngrediente]:
+    service = ProductoService(session)
+    return service.add_ingrediente(producto_id, data)

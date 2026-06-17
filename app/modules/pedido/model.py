@@ -24,12 +24,19 @@ class Pedido(BaseEntity, table=True):
     forma_pago_id: int = Field(foreign_key="forma_pago.id", index=True)
     modalidad_entrega: ModalidadEntrega = Field(index=True)
     subtotal: Decimal = Field(max_digits=10, decimal_places=2)
+    descuento: Decimal = Field(default=Decimal("0"), max_digits=10, decimal_places=2)
     total: Decimal = Field(max_digits=10, decimal_places=2)
     costo_envio: Decimal = Field(max_digits=10, decimal_places=2)
     notas : Optional[str] = Field(default=None, max_length=500)
 
     forma_pago_snap: Optional[str] = None
     direccion_snap: Optional[str] = None
+
+    mp_preference_id: Optional[str] = None
+    mp_payment_id: Optional[str] = None
+    mp_payment_status: Optional[str] = None
+    # UUID generado por el backend para evitar cobros duplicados en MercadoPago.
+    idempotency_key: Optional[str] = Field(default=None, index=True)
 
     usuario: "Usuario" = Relationship(back_populates="pedidos")
     estado_pedido: "EstadoPedido" = Relationship(back_populates="pedidos")

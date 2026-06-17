@@ -3,7 +3,7 @@ from fastapi import APIRouter, Depends, HTTPException, status, Path, Query
 from sqlmodel import Session
 
 from app.core.database import get_session
-from app.core.deps import get_current_active_user, require_role
+from app.core.deps import require_role
 from .schema import CategoriaCreate, CategoriaResponse, CategoriaUpdate
 from .service import create_categoria, delete_categoria, list_categorias, update_categoria, get_categoria_by_id
 from app.modules.rol.enums import RolEnum
@@ -24,7 +24,6 @@ def create(categoria: CategoriaCreate, session: Session = Depends(get_session)):
 @router_categoria.get(
     "/",
     response_model=list[CategoriaResponse],
-    dependencies=[Depends(get_current_active_user)],
 )
 def list_all(
     session: Session = Depends(get_session),
@@ -37,7 +36,6 @@ def list_all(
 @router_categoria.get(
     "/{categoria_id}",
     response_model=CategoriaResponse,
-    dependencies=[Depends(get_current_active_user)],
 )
 def get_by_id(
     categoria_id: Annotated[int, Path(ge=1, description="ID de la categoría")],

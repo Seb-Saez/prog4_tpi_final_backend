@@ -18,6 +18,8 @@ class HistorialEstadoPedido(BaseEntity, table=True):
     estado_nuevo: str = Field(foreign_key="estado_pedido.codigo", index=True)
 
     fecha_cambio: datetime = Field(default_factory=utcnow)
+    motivo: Optional[str] = None
+
     usuario: "Usuario" = Relationship(back_populates="historiales_estado_pedido")
     pedido: "Pedido" = Relationship(back_populates="historial_estado_pedido")
     estado_anterior_rel: Optional["EstadoPedido"] = Relationship(

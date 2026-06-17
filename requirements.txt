@@ -1,5 +1,6 @@
 fastapi[standard]
 sqlmodel
+alembic
 pydantic[email]
 passlib[bcrypt]
 PyJWT[crypto]
@@ -9,3 +10,6 @@ psycopg2-binary
 python-dotenv
 fastapi-throttle
 cloudinary
+mercadopago
+pytest
+httpx

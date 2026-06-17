@@ -1,6 +1,6 @@
 from typing import Annotated, Optional
 
-from fastapi import APIRouter, BackgroundTasks, Depends, Path, Query, status
+from fastapi import APIRouter, BackgroundTasks, Body, Depends, Path, Query, status
 from sqlmodel import Session
 
 from app.core.database import get_session
@@ -9,7 +9,14 @@ from app.core.websocket import broadcast_estado_cambiado
 from app.modules.rol.enums import RolEnum
 from app.modules.usuarios.schema import UserPublic
 
-from .schema import PedidoCreate, PedidoResponse, PedidoResumen
+from .schema import (
+    AvanzarEstadoRequest,
+    CancelarPedidoRequest,
+    HistorialEstadoOut,
+    PedidoCreate,
+    PedidoResponse,
+    PedidoResumen,
+)
 from .service import PedidoService
 
 
@@ -29,9 +36,20 @@ def crear_pedido(
     data: PedidoCreate,
     usuario: Annotated[UserPublic, Depends(get_current_active_user)],
     session: Session = Depends(get_session),
+    background_tasks: BackgroundTasks = BackgroundTasks(),
 ):
     """Crea un pedido a partir del carrito del cliente logueado."""
-    return PedidoService(session).crear_desde_carrito(data, usuario)
+    pedido = PedidoService(session).crear_desde_carrito(data, usuario)
+
+    background_tasks.add_task(
+        broadcast_estado_cambiado,
+        pedido_id=pedido.id,
+        estado_anterior=None,
+        estado_nuevo=pedido.estado_pedido_codigo,
+        usuario_id=usuario.id,
+    )
+
+    return pedido
 
 
 @router_pedido.get(
@@ -65,22 +83,39 @@ def obtener_pedido(
     return PedidoService(session).get_pedido(pedido_id, usuario)
 
 
-@router_pedido.patch(
-    "/{pedido_id}/cancelar",
+@router_pedido.get(
+    "/{pedido_id}/historial",
+    response_model=list[HistorialEstadoOut],
+)
+def historial_pedido(
+    pedido_id: Annotated[int, Path(ge=1)],
+    usuario: Annotated[UserPublic, Depends(get_current_active_user)],
+    session: Session = Depends(get_session),
+):
+    """Historial completo de transiciones del pedido. ORDER BY fecha_cambio ASC."""
+    return PedidoService(session).list_historial(pedido_id, usuario)
+
+
+@router_pedido.delete(
+    "/{pedido_id}",
     response_model=PedidoResponse,
 )
 def cancelar_pedido(
     pedido_id: Annotated[int, Path(ge=1)],
+    body: CancelarPedidoRequest,
     usuario: Annotated[UserPublic, Depends(get_current_active_user)],
     session: Session = Depends(get_session),
     background_tasks: BackgroundTasks = BackgroundTasks(),
 ):
-    """Cancela un pedido si el estado actual lo permite. Dueño o admin/cocina."""
+    """Cancela un pedido si el estado actual lo permite. Dueño o admin/cocina.
+
+    RN-05: el motivo es obligatorio y queda registrado en el historial.
+    """
     service = PedidoService(session)
     current = service.get_pedido(pedido_id, usuario)
     estado_anterior: str | None = current.estado_pedido.codigo
 
-    pedido = service.cancelar(pedido_id, usuario)
+    pedido = service.cancelar(pedido_id, usuario, body.motivo)
 
     background_tasks.add_task(
         broadcast_estado_cambiado,
@@ -88,6 +123,7 @@ def cancelar_pedido(
         estado_anterior=estado_anterior,
         estado_nuevo=pedido.estado_pedido_codigo,
         usuario_id=usuario.id,
+        motivo=body.motivo,
     )
 
     return pedido
@@ -100,7 +136,7 @@ def cancelar_pedido(
 @router_pedido.get(
     "/",
     response_model=list[PedidoResumen],
-    dependencies=[Depends(require_role([RolEnum.ADMIN, RolEnum.COCINA]))],
+    dependencies=[Depends(require_role([RolEnum.ADMIN, RolEnum.COCINA, RolEnum.CAJA]))],
 )
 def listar_todos(
     session: Session = Depends(get_session),
@@ -122,17 +158,28 @@ def avanzar_estado(
     pedido_id: Annotated[int, Path(ge=1)],
     usuario: Annotated[
         UserPublic,
-        Depends(require_role([RolEnum.ADMIN, RolEnum.COCINA])),
+        Depends(require_role([RolEnum.ADMIN, RolEnum.COCINA, RolEnum.CAJA])),
     ],
     session: Session = Depends(get_session),
     background_tasks: BackgroundTasks = BackgroundTasks(),
+    body: AvanzarEstadoRequest = Body(default=AvanzarEstadoRequest()),
 ):
-    """Avanza el pedido al siguiente estado por orden ascendente."""
+    """Avanza el pedido al siguiente estado por orden ascendente.
+
+    El body es opcional. Si se envía `nuevo_estado`, se valida que coincida
+    con el siguiente estado esperado. Si se envía `motivo`, queda registrado
+    en el historial.
+    """
     service = PedidoService(session)
     current = service.get_pedido(pedido_id, usuario)
     estado_anterior: str | None = current.estado_pedido.codigo
 
-    pedido = service.avanzar_estado(pedido_id, usuario)
+    pedido = service.avanzar_estado(
+        pedido_id,
+        usuario,
+        nuevo_estado=body.nuevo_estado,
+        motivo=body.motivo,
+    )
 
     background_tasks.add_task(
         broadcast_estado_cambiado,
@@ -140,6 +187,7 @@ def avanzar_estado(
         estado_anterior=estado_anterior,
         estado_nuevo=pedido.estado_pedido_codigo,
         usuario_id=usuario.id,
+        motivo=body.motivo,
     )
 
     return pedido

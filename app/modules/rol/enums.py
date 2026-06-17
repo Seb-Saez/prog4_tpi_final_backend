@@ -6,7 +6,7 @@ class RolEnum(StrEnum):
     para facilitar comparaciones en código mientras la fuente de verdad
     vive en la tabla `rol`."""
 
-    ADMIN   = "ADMIN"
-    CLIENTE = "CLIENTE"
-    COCINA  = "COCINA"
-    CAJA    = "CAJA"
+    ADMIN  = "ADMIN"
+    CLIENT = "CLIENT"
+    COCINA = "COCINA"
+    CAJA   = "CAJA"
