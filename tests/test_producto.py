@@ -110,6 +110,25 @@ class TestProductoCRUD:
         assert resp.status_code == 200, resp.text
         assert resp.json()["precio_base"] == 120.0
 
+    def test_update_disponible_false_persiste_con_stock(self, client: TestClient, admin_headers):
+        # Regresión: desmarcar "disponible" con stock > 0 debe persistir.
+        # Antes el stock pisaba la decisión manual del admin y volvía a True.
+        prod = self._seed_producto(client, "Para desactivar", 100.0)  # stock 5, disponible True
+        resp = client.patch(f"{self.ENDPOINT}/{prod['id']}", json={"disponible": False})
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["disponible"] is False
+        # Y al volver a leerlo, sigue en False (no lo reactivó el stock).
+        again = client.get(f"{self.ENDPOINT}/{prod['id']}")
+        assert again.json()["disponible"] is False
+
+    def test_update_stock_cero_reactiva_al_reponer(self, client: TestClient, admin_headers):
+        # Si el stock llega a 0, se apaga por stock; al reponer, se reactiva solo.
+        prod = self._seed_producto(client, "Cicla stock", 100.0)  # stock 5, disponible True
+        sin_stock = client.patch(f"{self.ENDPOINT}/{prod['id']}", json={"stock_cantidad": 0})
+        assert sin_stock.json()["disponible"] is False
+        repuesto = client.patch(f"{self.ENDPOINT}/{prod['id']}", json={"stock_cantidad": 10})
+        assert repuesto.json()["disponible"] is True
+
     def test_update_producto_forbidden_client(self, client: TestClient, admin_headers, client_token):
         prod = self._seed_producto(client, "Test", 50.0)
         _as(client, client_token)

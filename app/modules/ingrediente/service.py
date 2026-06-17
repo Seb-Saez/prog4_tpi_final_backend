@@ -40,10 +40,13 @@ class IngredienteService:
         self, skip: int = 0, limit: int = 20, es_alergeno: Optional[bool] = None
     ) -> list[Ingrediente]:
         with IngredienteUnitOfWork(self._session) as uow:
-            ingredientes = list(uow.ingredientes.get_all())
-            if es_alergeno is not None:
-                ingredientes = [i for i in ingredientes if i.es_alergeno == es_alergeno]
-            return ingredientes[skip : skip + limit]
+            # Paginación + filtro + orden estable resueltos en la query (no en
+            # Python sobre un get_all() limitado, que ocultaba registros).
+            return list(
+                uow.ingredientes.list_filtrado(
+                    skip=skip, limit=limit, es_alergeno=es_alergeno
+                )
+            )
 
     def get_by_id(self, ingrediente_id: int) -> Ingrediente:
         with IngredienteUnitOfWork(self._session) as uow:

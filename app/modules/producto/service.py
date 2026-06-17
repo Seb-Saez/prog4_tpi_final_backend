@@ -57,10 +57,11 @@ class ProductoService:
                 data.imagenes_url = []
             producto = Producto.model_validate(data)
 
+            # Sin stock al crear: se apaga y se deja registro de que fue por stock.
+            # Con stock: se respeta el `disponible` que mandó el admin.
             if producto.stock_cantidad == 0:
                 producto.disponible = False
-            elif producto.stock_cantidad > 0:
-                producto.disponible = True
+                producto.deshabilitado_por_stock = True
 
             if hasattr(data, "categorias_ids") and data.categorias_ids:
                 categorias = list(
@@ -122,10 +123,18 @@ class ProductoService:
             for field, value in update_data.items():
                 setattr(producto, field, value)
 
+            # Auto-disponibilidad por stock, RESPETANDO la decisión manual del admin:
+            # - Sin stock: se apaga y se marca que el motivo fue el stock (solo si
+            #   estaba disponible; si ya estaba apagado a mano, no se toca el flag).
+            # - Con stock: se reactiva SOLO si había sido apagado por stock. Nunca
+            #   pisa un apagado manual del admin (deshabilitado_por_stock = False).
             if producto.stock_cantidad == 0:
-                producto.disponible = False
-            elif producto.stock_cantidad > 0:
+                if producto.disponible:
+                    producto.disponible = False
+                    producto.deshabilitado_por_stock = True
+            elif producto.deshabilitado_por_stock:
                 producto.disponible = True
+                producto.deshabilitado_por_stock = False
 
             producto.updated_at = utcnow()
 

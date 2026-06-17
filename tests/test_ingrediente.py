@@ -439,3 +439,34 @@ class TestAjustarStock:
         )
         assert resp.status_code == 200
         assert resp.json()["stock_cantidad"] == 3
+
+    def test_paginacion_orden_estable_no_oculta_actualizados(
+        self, client: TestClient, admin_headers
+    ):
+        """Regresión: marcar faltante un ingrediente no debe sacarlo del listado
+        (orden estable por id), y la página 2 debe traer los registros > 20
+        (antes get_all limitaba a 20 y los dejaba inalcanzables)."""
+        ids = []
+        for i in range(22):
+            r = client.post(self.ENDPOINT, json={
+                "nombre": f"IngPag{i:02d}",
+                "descripcion": "x",
+                "es_alergeno": False,
+            })
+            assert r.status_code == 201, r.text
+            ids.append(r.json()["id"])
+
+        # Marcar faltante el primero (lo "actualiza")
+        r = client.patch(f"{self.ENDPOINT}/{ids[0]}/stock", json={"stock_cantidad": 0})
+        assert r.status_code == 200
+
+        # Página 1: el actualizado sigue presente (orden por id estable)
+        pag1 = client.get(f"{self.ENDPOINT}?skip=0&limit=20").json()
+        assert len(pag1) == 20
+        assert ids[0] in [i["id"] for i in pag1]
+
+        # Página 2: trae los restantes (antes quedaban inalcanzables)
+        pag2 = client.get(f"{self.ENDPOINT}?skip=20&limit=20").json()
+        ids_pag2 = [i["id"] for i in pag2]
+        assert len(pag2) == 2
+        assert ids[20] in ids_pag2 and ids[21] in ids_pag2

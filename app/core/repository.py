@@ -20,9 +20,13 @@ class BaseRepository(Generic[ModelT]):
         return instance
 
     def get_all(self, offset: int = 0, limit: int = 20) -> Sequence[ModelT]:
+        # ORDER BY id: sin orden explícito Postgres no garantiza el orden de
+        # retorno, y al ACTUALIZAR una fila esta "salta" de posición — con
+        # paginación eso hace que registros editados desaparezcan de la página.
         stmt = (
             select(self.model)
             .where(col(self.model.deleted_at).is_(None))
+            .order_by(col(self.model.id))
             .offset(offset)
             .limit(limit)
         )
