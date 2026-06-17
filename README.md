@@ -4,6 +4,9 @@ API REST + WebSocket del sistema de gestión de pedidos de comida, construida co
 **FastAPI**, **SQLModel** y **PostgreSQL**. Aplica arquitectura por capas
 (`router → service → unit_of_work → repository → model`) con módulos por feature.
 
+# Link al video
+[![Video de presentación](https://img.youtube.com/vi/00k1g5J8X4/0.jpg)](https://youtu.be/9mZBAH2CmGo)
+
 ## Stack
 
 | Capa | Tecnología |
