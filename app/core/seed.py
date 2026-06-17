@@ -479,6 +479,10 @@ def seed_productos(session: Session) -> None:
         session.commit()
 
 
+# Stock inicial con el que arrancan los ingredientes seedeados. Sin esto
+# nacerían en 0 y la UI los mostraría a todos como "Faltante".
+STOCK_INICIAL_INGREDIENTE = 100
+
 # Catálogo de ingredientes. es_alergeno marca los de declaración obligatoria
 # (gluten, lácteos, huevo).
 INGREDIENTES_SEED: list[dict] = [
@@ -513,7 +517,7 @@ def seed_ingredientes(session: Session) -> None:
     existentes_nombres = {i.nombre for i in session.exec(select(Ingrediente)).all()}
 
     nuevos = [
-        Ingrediente(**data)
+        Ingrediente(**data, stock_cantidad=STOCK_INICIAL_INGREDIENTE)
         for data in INGREDIENTES_SEED
         if data["nombre"] not in existentes_nombres
     ]
