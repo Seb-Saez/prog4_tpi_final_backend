@@ -28,9 +28,16 @@ class AdminUserCreate(SQLModel):
 
 
 class UserUpdate(SQLModel):
-    """Campos actualizables del usuario — todos opcionales."""
-    full_name: Optional[str] = None
-    celular:   Optional[str] = None
+    """Campos actualizables de un usuario desde administración.
+
+    Todos opcionales: solo se modifican los que vengan en el request. El username
+    no es editable (es el identificador de login). Si `password` viene, se
+    re-hashea e invalida las sesiones activas del usuario.
+    """
+    full_name: Optional[str]      = None
+    email:     Optional[EmailStr] = None
+    celular:   Optional[str]      = None
+    password:  Optional[str]      = Field(default=None, min_length=8)
 
 
 class UserPublic(SQLModel):

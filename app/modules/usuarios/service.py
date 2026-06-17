@@ -6,7 +6,7 @@ from fastapi import HTTPException, status
 from app.core.config import settings
 from app.core.security import hash_password, verify_password, create_access_token, create_refresh_token_pair, hash_token
 from app.modules.usuarios.model import Usuario
-from app.modules.usuarios.schema import AdminUserCreate, UserCreate, Token, UserPublic
+from app.modules.usuarios.schema import AdminUserCreate, UserCreate, UserUpdate, Token, UserPublic
 from app.modules.usuarios.unit_of_work import UsuarioUnitOfWork
 from app.modules.rol.model import UsuarioRol
 from app.modules.rol.enums import RolEnum
@@ -139,6 +139,44 @@ class UsuarioService:
             )
         user.disabled = disabled
         return self.uow.usuarios.update(user)
+
+    def admin_update_user(self, user_id: int, data: UserUpdate) -> UserPublic:
+        """Edita los campos de un usuario (operación de admin).
+
+        Solo toca los campos presentes en el request. Valida unicidad del email
+        si cambia. Si viene una nueva contraseña, la re-hashea e incrementa el
+        token_version para invalidar las sesiones activas del usuario.
+        """
+        user = self.uow.usuarios.get_by_id(user_id)
+        if not user:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Usuario no encontrado",
+            )
+
+        update_fields = data.model_dump(exclude_unset=True)
+
+        nuevo_email = update_fields.get("email")
+        if nuevo_email and nuevo_email != user.email:
+            existente = self.uow.usuarios.get_by_email(nuevo_email)
+            if existente and existente.id != user_id:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="El email ya está registrado",
+                )
+            user.email = nuevo_email
+
+        if "full_name" in update_fields:
+            user.full_name = update_fields["full_name"]
+        if "celular" in update_fields:
+            user.celular = update_fields["celular"]
+
+        nueva_password = update_fields.get("password")
+        if nueva_password:
+            user.hashed_password = hash_password(nueva_password)
+            user.token_version += 1  # invalida sesiones activas tras cambiar la pass
+
+        return UserPublic.model_validate(self.uow.usuarios.update(user))
 
     def logout(self, user_id: int) -> None:
         user = self.uow.usuarios.get_by_id(user_id)

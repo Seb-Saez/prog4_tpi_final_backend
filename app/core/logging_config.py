@@ -20,6 +20,7 @@ _DATE_FORMAT = "%Y-%m-%d %H:%M:%S"
 
 _configured = False
 
+# 2026-06-17 00:53:10 | INFO     | app.core.middleware | GET /api/v1/productos → 200 (12.4 ms)
 
 def setup_logging(level: int = logging.INFO) -> None:
     """Instala un handler de consola sobre el logger `app` (idempotente)."""
@@ -33,8 +34,6 @@ def setup_logging(level: int = logging.INFO) -> None:
     app_logger = logging.getLogger("app")
     app_logger.setLevel(level)
     app_logger.addHandler(handler)
-    # propagate=False: los logs no suben al root, así no se duplican con los
-    # handlers que uvicorn instala por su cuenta.
     app_logger.propagate = False
 
     _configured = True

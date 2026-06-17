@@ -23,7 +23,7 @@ from app.core.deps import get_current_active_user, require_role
 from app.core.security import hash_token, create_access_token, create_refresh_token_pair
 from app.modules.usuarios.unit_of_work import UsuarioUnitOfWork, get_uow
 from app.modules.rol.enums import RolEnum
-from app.modules.usuarios.schema import AdminUserCreate, UserCreate, UserPublic
+from app.modules.usuarios.schema import AdminUserCreate, UserCreate, UserUpdate, UserPublic
 from app.modules.rol.unit_of_work import RolUnitOfWork, get_uow as get_rol_uow
 from app.modules.usuarios.service import UsuarioService
 from app.modules.refresh_token.model import RefreshToken

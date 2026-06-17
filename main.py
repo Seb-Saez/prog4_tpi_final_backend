@@ -102,6 +102,10 @@ def redirect_mp(status: str = Query(...), pedido_id: str = Query(...)):
         f"{settings.MP_FRONTEND_URL}/pago/resultado?status={status}&pedido_id={pedido_id}"
     )
 
+@app.get("/debug/boom")
+def _boom():
+    raise RuntimeError("explosión de prueba")
+
 
 # ─── Routers ──────────────────────────────────────────────────────────────────
 app.include_router(router_categoria)
